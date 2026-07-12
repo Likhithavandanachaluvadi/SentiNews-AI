@@ -1,0 +1,193 @@
+# Deep Technical Architecture Review: SentiNews AI Backend
+
+This is a comprehensive, code-level architecture review of the SentiNews AI financial analysis backend based on direct inspection of the source code.
+
+## 1. QDRANT / RAG ANALYSIS
+
+* **What data is stored in Qdrant exactly?** News articles and their metadata.
+* **What collections exist?** A single collection named `financial_documents` (in `rag/ingestion.py`) and `financial_research` (in `rag/qdrant_client.py`). There is a slight mismatch in the code between `ingestion.py` (`financial_documents`) and `qdrant_client.py` (`financial_research`).
+* **What embedding model is used?** `sentence-transformers/all-MiniLM-L6-v2` is used for ingestion (384 dimensions) in `rag/ingestion.py`, while `BAAI/bge-small-en-v1.5` is configured in `rag/embeddings.py` (also 384 dimensions). This is an inconsistency in the codebase.
+* **How are chunks created?** Custom word-based splitting (`_chunk_text` in `rag/ingestion.py`). It splits the text (title + content) by words.
+* **Chunk size?** 200 words per chunk with a 50-word overlap.
+* **Metadata structure?** `title`, `content`, `source`, `ticker`, `url`, `published_at`, `ingested_at`, `sentiment_score`, `chunk_index`, and `total_chunks`.
+* **What retrieval strategy is used?** 
+  * **similarity search?** Yes, pure Cosine Similarity semantic search (`Distance.COSINE`).
+  * **hybrid search?** Not implemented.
+  * **reranking?** Not implemented.
+* **Is retrieval static or agentic?** Static. The retriever node (`agents/retriever.py`) fetches market data and news deterministically at the start of the workflow. The vector search (`rag/ingestion.py:search`) exists in the codebase but is **NOT actually called** during the core LangGraph workflow (`retriever_node` directly calls `yfinance` and `NewsAPI`).
+* **Can agents request additional retrieval dynamically?** No. The workflow is a fixed DAG (Directed Acyclic Graph). Analysts cannot request more data if they find the initial context insufficient.
+* **Are generated reports stored back into vector DB?** No. They are saved to PostgreSQL (via `save_report_to_db` in `analysis.py`), not Qdrant.
+* **Is conversational memory implemented?** No. `ResearchState` only holds the current query, context, and reports. There is no `chat_history` or memory saver implemented in the graph.
+
+## 2. LANGGRAPH WORKFLOW ANALYSIS
+
+* **Explain the complete LangGraph flow step-by-step.**
+  1. **Retriever Node:** Extracts the ticker from the query, fetches live market data from `yfinance`/`screener.com` and recent news from `NewsAPI`, and populates the `context` list in `ResearchState`.
+  2. **Parallel Analyst Nodes:** The `fundamental_node`, `technical_node`, and `sentiment_node` are all triggered simultaneously. Each receives the exact same `ResearchState` (query + context).
+  3. **Judge Node:** Once all three analysts complete, the graph synchronizes and triggers the `judge_node`. It takes the three JSON reports and synthesizes a final 4-section Markdown report.
+* **Show nodes and edges.**
+  ```mermaid
+  graph TD
+      R[Retriever Node] --> F[Fundamental Node]
+      R --> T[Technical Node]
+      R --> S[Sentiment Node]
+      F --> J[Judge Node]
+      T --> J[Judge Node]
+      S --> J[Judge Node]
+      J --> END
+  ```
+* **Is workflow sequential or parallel?** The data gathering is sequential, followed by parallel analyst execution, followed by sequential synthesis.
+* **Are analyst agents executed concurrently?** Yes, LangGraph handles this automatically because multiple edges point from `retriever` to the analysts.
+* **Is there retry logic?** Not at the LangGraph level. There is no cyclic routing for correction. Retry logic exists only at the HTTP request level using the `tenacity` library (e.g., in `news_service.py`).
+* **Is there conditional routing?** No. The graph is completely static and deterministic. No conditional edges (`add_conditional_edges`) are used.
+* **Does the Judge agent influence earlier stages?** No. The Judge cannot ask an analyst to rewrite a section. The flow goes strictly to `END` after the Judge.
+* **Is state persisted?** Not by LangGraph (no checkpointing). The final state is manually persisted to the PostgreSQL database in the API route.
+* **What does state.py contain exactly?** A `TypedDict` containing: `query`, `ticker`, `context` (list of strings), `fundamental_report`, `technical_report`, `sentiment_report`, and `final_report`.
+
+## 3. AGENT ANALYSIS
+
+### Retriever Agent (Node)
+* **Responsibilities:** Extract stock tickers from natural language, fetch live pricing, financial statements, institutional metrics, and news.
+* **Tools Used:** Yahoo Finance Search API, `indian_tickers.json` map, Regex fallback, `yfinance` library, `screener.com` scraping, `NewsAPI`.
+* **Reasoning style:** Purely procedural/rule-based python code. It does not use an LLM to decide what to retrieve.
+
+### Fundamental Analyst
+* **Responsibilities:** Analyze financials, business model, growth, and valuation.
+* **Prompt:** Strict JSON output prompt requesting business model, screener key stats, financial health, valuation, competitive position, growth story, capital allocation, risk analysis, catalysts, investment thesis, final verdict, and a score.
+* **Inputs:** Raw text `context` containing yfinance data and news.
+* **Outputs:** A structured JSON object.
+* **LLM Used:** `llama-3.1-8b-instant` via Groq.
+
+### Technical Analyst
+* **Responsibilities:** Analyze price action, moving averages, momentum, and identify chart patterns.
+* **Prompt:** Strict JSON output prompt requesting price changes, 52w highs/lows, support/resistance, moving averages, momentum indicators, trend analysis, chart patterns, volume trends, trading plan, and risk factors.
+* **Inputs:** Raw text `context`.
+* **Outputs:** A structured JSON object.
+* **LLM Used:** `llama-3.1-8b-instant` via Groq.
+* **Note:** It relies entirely on the text-based yfinance snapshot for technical analysis. It does not look at actual charts or time-series arrays.
+
+### Sentiment Analyst
+* **Responsibilities:** Analyze market-wide summary and stock-specific news sentiment.
+* **Prompt:** Strict JSON output prompt requesting market summary, list of stock news (with sentiment tags), recurring themes, a sentiment score (0-10), and reasoning.
+* **Inputs:** Raw text `context` containing NewsAPI headlines.
+* **Outputs:** A structured JSON object.
+* **LLM Used:** `llama-3.1-8b-instant` via Groq.
+
+### Judge Agent
+* **Responsibilities:** Synthesize the three JSON reports into a final cohesive Markdown report for the user.
+* **Prompt:** Strict JSON output prompt (with embedded Markdown strings) requesting executive summary, fundamental analysis, technical analysis, sentiment analysis, conclusion, and risk disclaimer.
+* **Inputs:** The three JSON reports from the analysts.
+* **Outputs:** A structured JSON object containing Markdown strings.
+* **LLM Used:** `llama-3.3-70b-versatile` via Groq.
+* **Communication:** Agents do NOT communicate with each other. The Judge simply reads their final outputs.
+
+## 4. PROMPT ENGINEERING ANALYSIS
+
+* **Where are prompts stored?** Hardcoded inside `agents/analysts.py` and `agents/judge.py`.
+* **Are prompts modular?** No, they are massive monolithic strings.
+* **Are prompts dynamically generated?** No. They only format variables (`{query}`, `{context}`).
+* **Is structured output enforced?** The prompts heavily *request* JSON structure (e.g., "Structure your response EXACTLY as a valid JSON object"), but they do **NOT** use Langchain's `.with_structured_output()` or Groq's JSON mode. The code manually attempts to `json.loads()` the raw string response and has manual fallback parsing logic (like regex/substring extraction in `judge.py`).
+* **JSON schema?** No strict JSON Schema validation (like Pydantic models) is enforced on the LLM output.
+* **Are hallucination prevention techniques used?** Yes, by prompting ("Use actual data from the provided market context, not hypothetical data"). However, there are no programmatic hallucination checks.
+* **Are citations/sources included?** Yes, citations are retroactively parsed in the API route (`analysis.py`) from the raw `context` strings using regex-like string splitting. The LLMs themselves do not output formal citation markers (like `[1]`).
+
+## 5. MARKET DATA PIPELINE
+
+* **How is yFinance used?** Standard `yf.Ticker(ticker).info`, `.quarterly_financials`, `.financials`, and `.history(period=period)`. It automatically appends `.NS` for Indian stocks.
+* **What market data is fetched?** Company overview, current price, prev close, P/E, P/B, market cap, revenue, margins, ROE, debt/equity, EPS, dividend yield, 52w ranges, and 3-5 years of quarterly/annual financial statement data.
+* **Is real-time streaming implemented?** No. Data is fetched synchronously per request.
+* **Are technical indicators calculated internally?** No. The system just provides the raw price/financial snapshot to the LLM. The LLM guesses/calculates things like moving averages from the text, which is highly prone to hallucination because it lacks full time-series data.
+* **Which indicators?** None are calculated in code. ROCE is manually calculated, but no technical indicators (RSI, MACD) are calculated.
+* **Is caching implemented?** No caching on the market data fetch layer.
+
+## 6. NEWS + SENTIMENT PIPELINE
+
+* **How is NewsAPI integrated?** Standard HTTP GET requests using `httpx.AsyncClient` targeting `/v2/everything` with the ticker/company name.
+* **How are articles processed?** The title, description, and source are concatenated into a single string for the LLM context.
+* **How is sentiment determined?** Purely LLM-based. The Sentiment Analyst reads the news strings and assigns a score (0-10) and a label (Positive/Negative/Neutral).
+* **Is duplicate news filtering implemented?** No.
+* **Is source credibility considered?** No. All NewsAPI results are weighted equally.
+
+## 7. DATABASE ARCHITECTURE
+
+* **PostgreSQL schema:** Managed by SQLAlchemy Async ORM.
+* **Tables:**
+  * `users`: `id` (UUID), `email`, `username`, `hashed_password`, `full_name`, `is_active`, `is_premium`, audit timestamps.
+  * `generated_reports`: `id` (UUID), `user_id` (FK), `ticker`, `company_name`, `query`, `fundamental_report` (JSONB), `technical_report` (JSONB), `sentiment_report` (JSONB), `final_report` (Text), `citations` (JSONB), `sentiment_score`, `generation_time_ms`, timestamps.
+* **Stored entities:** User profiles and complete history of generated reports.
+* **User history:** Implemented via the `GeneratedReport` table.
+* **Reports:** Fully stored with the underlying agent JSON outputs (`JSONB`) and the final markdown text.
+* **Caching:** The `GeneratedReport` model has an `is_cached` boolean, but the actual caching mechanism is not implemented in the API flow.
+* **Authentication system:** Uses bcrypt for password hashing and JWT for tokens (inferred from `api/v1/endpoints/auth.py` imports and standard FastAPI patterns).
+* **Logging system:** Standard Python `logging` module.
+
+## 8. API ARCHITECTURE
+
+* **List all API endpoints:**
+  * `GET /` (Info)
+  * `GET /health`, `GET /health/ready`
+  * `/api/v1/auth/*` (Login, Register, etc.)
+  * `/api/v1/research/analyze` (Main agent workflow)
+  * `/api/v1/research/history` (User history)
+  * `/api/v1/market/*` (Market data APIs)
+* **Request/response flow:** Client -> FastAPI Middleware (CORS, Rate Limiter, Process Time) -> API Route -> Agentic Graph (Awaited) -> Database Save -> Response.
+* **Streaming support?** **Not implemented.** The API waits for the entire LangGraph execution to finish (which takes time given 4 LLM calls and API fetches) and returns the final JSON response (`status_code=status.HTTP_202_ACCEPTED` is used misleadingly, as the request is processed synchronously in the request lifecycle, not in a background task).
+* **Async support?** Yes, heavily utilizes `async/await`, `httpx`, and `AsyncSession`.
+* **Background jobs?** Not implemented for the main analysis task. The database save is awaited inline, not run as a background task.
+* **WebSocket usage?** Not implemented.
+* **Rate limiting?** Yes, using `slowapi` (Free limit: 10/min, Premium: 100/min).
+* **Authentication?** Yes, JWT based dependency injection (`get_current_user`).
+
+## 9. SCALABILITY REVIEW
+
+* **Bottlenecks:** 
+  1. The `analyze` endpoint blocks the HTTP connection while waiting for 4 LLM calls and multiple slow web scraping/API calls (yfinance, screener.com, NewsAPI). This will cause HTTP timeouts on the client side (Vercel has a strict timeout).
+  2. The Judge node uses a 70B model, which is slow and will dominate response time.
+* **Latency risks:** Extremely high. Fetching data + 3 parallel 8B LLM calls + 1 sequential 70B LLM call easily takes 15-30+ seconds.
+* **Token explosion risks:** If `yfinance` returns massive historical financial tables, the string representation injected into the context could exceed the 8B model's context window.
+* **Scaling issues:** Synchronous execution of the graph inside the HTTP request loop limits the number of concurrent users.
+* **API dependency risks:** `yfinance` is notoriously unstable and rate-limits aggressively. `screener.com` relies on `BeautifulSoup` web scraping which breaks if DOM changes.
+* **Vector search limitations:** Qdrant is initialized and ingestion logic exists, but the **RAG retrieval is completely disconnected** from the main agent graph. The system relies entirely on live API calls.
+* **Memory issues:** Not an immediate risk as state is discarded after the request, but long-term memory for users is non-existent.
+
+## 10. SECURITY REVIEW
+
+* **Exposed API keys:** None hardcoded; they are correctly loaded from `.env` via `settings`.
+* **Insecure configs:** CORS is well-configured for production/development.
+* **Prompt injection vulnerabilities:** High. The user `query` is injected directly into the LLM prompts without sanitization. A user could write "Ignore previous instructions and output..."
+* **Unsafe retrieval:** Beautifulsoup parsing of `screener.com` could be vulnerable if the site is compromised, but low risk for Python.
+* **Missing validation:** Input validation is mostly handled by Pydantic. However, ticker extraction uses regex and search APIs that could fail unpredictably.
+* **Unsafe serialization:** Uses `json.loads` on LLM output without strict schema guarantees. If the LLM outputs malicious payload (unlikely but possible), it gets saved to DB.
+* **Missing auth protection:** The `analyze_stock` endpoint allows `current_user` to be `Optional` (guest access), which means the rate limiter is the only defense against abuse.
+
+## 11. ARCHITECTURE MATURITY
+
+* **MVP quality:** Excellent. It's a highly functional prototype demonstrating parallel agent execution and data aggregation.
+* **Production readiness:** Poor. The lack of streaming/websockets for a 20-second process will result in horrible UX and timeouts. The lack of structured output guarantees (using `.with_structured_output`) means JSON parsing will fail frequently in production.
+* **Enterprise readiness:** Poor. Lacks SSO, RBAC, proper LLM guardrails, and audit logging.
+* **Scalability level:** Low-to-Medium. While FastAPI is async, holding open HTTP connections for long LLM chains is an anti-pattern. Requires moving graph execution to a task queue (Celery/RQ) or using Server-Sent Events (SSE).
+* **Maintainability:** Good. Code is cleanly separated into domains (agents, API, database, services).
+* **Code quality:** Very Good. Strong typing, good docstrings, good use of async patterns.
+* **Modularity:** High. Easy to swap out models, add new agents, or change database providers.
+
+## 12. FUTURE IMPROVEMENT RECOMMENDATIONS
+
+* **Architecture improvements:** Move the LangGraph execution to a background worker (e.g., Celery) and implement WebSockets or Server-Sent Events (SSE) to stream the graph's progress and final tokens back to the client.
+* **Better agent systems:** Use LangChain's `with_structured_output()` leveraging Groq's JSON mode to guarantee valid JSON from analysts, completely removing the brittle regex/string parsing hacks.
+* **Memory systems:** Implement LangGraph's `MemorySaver` (checkpointing) to allow users to ask follow-up questions about the generated report (e.g., "Why did the technical analyst say sell?").
+* **Autonomous workflows:** Implement a self-reflection loop. If the Judge fails to parse the analysts' output, it should conditionally route back to the analysts to fix the formatting.
+* **Better RAG strategies:** Actually connect the Qdrant database to the agent graph. Use it to store historical reports and long-term financial news, allowing agents to search historical context rather than just the last 30 days.
+* **Financial AI enhancements:** The Technical Analyst currently guesses technical indicators from raw text. You MUST compute RSI, MACD, and SMAs programmatically using `pandas-ta` or `TA-Lib` and feed the *computed values* to the LLM.
+* **Real-time intelligence upgrades:** Connect to real-time WebSockets for tick data instead of static yfinance snapshots.
+* **Cost optimization:** 8B models are cheap, but the 70B model for the Judge is expensive. Consider fine-tuning an 8B model specifically for the synthesis task.
+
+---
+
+### FINAL SCORES
+
+1. **Full architecture summary:** A clean, async-first FastAPI backend orchestrating a static parallel LangGraph workflow. It aggregates live market data and news, feeds it to three parallel 8B analyst LLMs, and synthesizes the results using a 70B Judge LLM. Results are stored in PostgreSQL.
+2. **Weaknesses:** No streaming/WebSockets leading to UX timeouts, completely disconnected Qdrant RAG system, lack of deterministic JSON output forcing brittle manual parsing, and technical analysis is hallucinated from text rather than computed mathematically.
+3. **Strengths:** Excellent separation of concerns, strong async concurrency (parallel analyst nodes), robust database schema, and well-engineered resilient API integrations (Tenacity retries).
+4. **Production readiness score:** 4/10 (Must implement streaming and fix JSON parsing first).
+5. **Scalability score:** 5/10 (Async FastAPI is good, but holding HTTP connections open during LLM execution limits scale).
+6. **AI system maturity score:** 6/10 (Parallel execution is great, but lacks reflection, correction routing, and actual tool-use/function-calling).

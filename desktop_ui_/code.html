@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>SentiNews AI - Decipher Markets with AI</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&amp;family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-error-container": "#ffdad6",
+                        "inverse-on-surface": "#2e3038",
+                        "on-tertiary-fixed-variant": "#5c4300",
+                        "on-tertiary-fixed": "#261a00",
+                        "primary-fixed": "#d8e2ff",
+                        "outline": "#8c909f",
+                        "surface": "#11131a",
+                        "on-background": "#e1e2eb",
+                        "surface-dim": "#11131a",
+                        "on-primary": "#002e69",
+                        "on-primary-container": "#00285c",
+                        "surface-container-low": "#191b22",
+                        "on-secondary-fixed": "#002108",
+                        "inverse-surface": "#e1e2eb",
+                        "surface-container-high": "#272a31",
+                        "primary-container": "#4d8efe",
+                        "secondary-container": "#30a550",
+                        "tertiary": "#fbbc06",
+                        "on-error": "#690005",
+                        "surface-tint": "#adc6ff",
+                        "on-secondary": "#003914",
+                        "secondary-fixed-dim": "#6ddd81",
+                        "error-container": "#93000a",
+                        "on-primary-fixed": "#001a41",
+                        "outline-variant": "#424753",
+                        "on-tertiary": "#402d00",
+                        "secondary": "#6ddd81",
+                        "primary": "#adc6ff",
+                        "on-surface": "#e1e2eb",
+                        "surface-container-highest": "#32353c",
+                        "tertiary-fixed-dim": "#fbbc06",
+                        "secondary-fixed": "#89fa9b",
+                        "primary-fixed-dim": "#adc6ff",
+                        "tertiary-container": "#b88900",
+                        "surface-bright": "#363940",
+                        "on-secondary-fixed-variant": "#005320",
+                        "surface-container": "#1d2026",
+                        "on-secondary-container": "#003210",
+                        "inverse-primary": "#005ac1",
+                        "surface-variant": "#32353c",
+                        "tertiary-fixed": "#ffdea0",
+                        "on-primary-fixed-variant": "#004494",
+                        "error": "#ffb4ab",
+                        "surface-container-lowest": "#0b0e15",
+                        "on-tertiary-container": "#372700",
+                        "on-surface-variant": "#c2c6d5",
+                        "background": "#11131a",
+                        "google-blue": "#4285F4",
+                        "google-red": "#EA4335",
+                        "google-yellow": "#FBBC05",
+                        "google-green": "#34A853",
+                        "success": "#34A853",
+                        "danger": "#EA4335",
+                        "warning": "#FBBC05"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "max-width": "1280px",
+                        "margin-mobile": "16px",
+                        "margin-desktop": "64px",
+                        "gutter": "24px",
+                        "unit": "8px"
+                    },
+                    "fontFamily": {
+                        "headline-lg": ["Hanken Grotesk"],
+                        "label-lg": ["Inter"],
+                        "body-lg": ["Inter"],
+                        "title-lg": ["Hanken Grotesk"],
+                        "body-md": ["Inter"],
+                        "headline-lg-mobile": ["Hanken Grotesk"],
+                        "label-sm": ["Inter"],
+                        "headline-md": ["Hanken Grotesk"],
+                        "mono": ["JetBrains Mono"]
+                    },
+                    "fontSize": {
+                        "headline-lg": ["32px", {"lineHeight": "40px", "letterSpacing": "-0.02em", "fontWeight": "600"}],
+                        "label-lg": ["12px", {"lineHeight": "16px", "letterSpacing": "0.1px", "fontWeight": "500"}],
+                        "body-lg": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+                        "title-lg": ["20px", {"lineHeight": "28px", "fontWeight": "500"}],
+                        "body-md": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                        "headline-lg-mobile": ["24px", {"lineHeight": "32px", "fontWeight": "600"}],
+                        "label-sm": ["11px", {"lineHeight": "16px", "letterSpacing": "0.5px", "fontWeight": "500"}],
+                        "headline-md": ["24px", {"lineHeight": "32px", "fontWeight": "500"}]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .symbol-filled {
+            font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        
+        /* Subtle grid background for the Hero to give an analytical feel */
+        .bg-grid-pattern {
+            background-image: 
+                linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+            background-size: 40px 40px;
+        }
+
+        /* Neural network data pulse animation */
+        @keyframes pulse-line {
+            0% { transform: translateY(-100%); opacity: 0; }
+            50% { opacity: 1; }
+            100% { transform: translateY(100%); opacity: 0; }
+        }
+        .data-line {
+            position: absolute;
+            width: 1px;
+            height: 200px;
+            background: linear-gradient(to bottom, transparent, rgba(66, 133, 244, 0.5), transparent);
+            animation: pulse-line 4s infinite linear;
+        }
+
+        .glass-card {
+            background: rgba(30, 32, 38, 0.4);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+        }
+
+        .terminal-row {
+            transition: all 0.2s ease;
+        }
+        .terminal-row:hover {
+            background: rgba(66, 133, 244, 0.05);
+            border-left: 2px solid #4285F4;
+        }
+    </style>
+</head>
+<body class="bg-background text-on-background antialiased min-h-screen flex flex-col font-body-md selection:bg-google-blue selection:text-white">
+<!-- TopNavBar -->
+<header class="bg-surface/80 backdrop-blur-md w-full z-50 sticky top-0 border-b border-surface-container-highest">
+<div class="flex justify-between items-center w-full px-margin-desktop max-w-max-width mx-auto h-20">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-google-blue symbol-filled text-3xl">insights</span>
+<span class="font-headline-md text-headline-md font-bold text-primary dark:text-primary tracking-tight">SentiNews AI</span>
+</div>
+<nav class="hidden md:flex gap-8 items-center h-full">
+<a class="text-on-surface-variant dark:text-on-surface-variant font-medium hover:text-primary dark:hover:text-primary-fixed-dim transition-colors duration-200" href="#">Markets</a>
+<a class="text-on-surface-variant dark:text-on-surface-variant font-medium hover:text-primary dark:hover:text-primary-fixed-dim transition-colors duration-200" href="#">Sentiment</a>
+<a class="text-primary dark:text-primary border-b-2 border-primary pb-2 font-bold hover:text-primary dark:hover:text-primary-fixed-dim transition-colors duration-200 h-full flex items-center pt-2" href="#">Research</a>
+<a class="text-on-surface-variant dark:text-on-surface-variant font-medium hover:text-primary dark:hover:text-primary-fixed-dim transition-colors duration-200" href="#">Enterprise</a>
+<a class="text-on-surface-variant dark:text-on-surface-variant font-medium hover:text-primary dark:hover:text-primary-fixed-dim transition-colors duration-200" href="#">Pricing</a>
+</nav>
+<div class="flex items-center gap-4">
+<button class="text-on-surface-variant font-label-lg text-label-lg hover:text-primary transition-colors">Sign In</button>
+<button class="bg-google-blue text-white px-6 py-2.5 rounded-full font-label-lg text-label-lg hover:bg-blue-600 transition-colors scale-95 active:scale-90 transition-transform">Get Started</button>
+</div>
+</div>
+</header>
+<main class="flex-grow flex flex-col">
+<!-- Hero Section -->
+<section class="relative w-full pt-32 pb-40 px-margin-desktop overflow-hidden bg-grid-pattern">
+<!-- Immersive Data Pulse Background -->
+<div class="absolute inset-0 pointer-events-none opacity-30">
+<div class="data-line left-[10%]" style="animation-delay: 0s;"></div>
+<div class="data-line left-[30%]" style="animation-delay: 1.2s; height: 300px;"></div>
+<div class="data-line left-[50%]" style="animation-delay: 2.5s;"></div>
+<div class="data-line left-[70%]" style="animation-delay: 0.8s; height: 150px;"></div>
+<div class="data-line left-[90%]" style="animation-delay: 3.1s;"></div>
+</div>
+<!-- Ambient Glow -->
+<div class="absolute top-1/4 left-1/2 -translate-x-1/2 w-[1000px] h-[500px] bg-gradient-to-r from-google-blue/10 via-google-red/5 to-google-yellow/5 rounded-full blur-[120px] pointer-events-none"></div>
+<div class="max-w-max-width mx-auto flex flex-col items-center text-center relative z-10">
+<div class="inline-flex items-center gap-2 bg-surface-container-lowest/80 backdrop-blur-sm px-4 py-1.5 rounded-full border border-outline-variant/30 mb-8 shadow-sm">
+<span class="material-symbols-outlined text-google-blue text-sm symbol-filled">auto_awesome</span>
+<span class="font-label-lg text-label-lg text-on-surface">Backed by Google Cloud AI</span>
+</div>
+<h1 class="font-headline-lg text-5xl md:text-7xl font-bold tracking-tight mb-6 max-w-5xl leading-tight">
+<span class="text-transparent bg-clip-text bg-gradient-to-r from-google-blue via-google-red to-google-yellow">Decipher Markets</span> <br/><span class="text-on-surface">with AI Financial Intelligence</span>
+</h1>
+<p class="font-body-lg text-body-lg text-on-surface-variant max-w-2xl mb-10 text-lg">
+                    Real-time institutional-grade stock analysis powered by autonomous AI research agents. Gain clarity in volatile markets with continuous data synthesis.
+                </p>
+<div class="flex flex-col sm:flex-row gap-4 items-center">
+<button class="bg-google-blue text-white px-8 py-3.5 rounded-full font-label-lg text-label-lg flex items-center gap-2 hover:bg-blue-600 transition-colors shadow-[0_0_20px_rgba(66,133,244,0.3)]">
+                        Start Research
+                        <span class="material-symbols-outlined text-sm">arrow_forward</span>
+</button>
+<button class="glass-card text-on-surface px-8 py-3.5 rounded-full font-label-lg text-label-lg hover:bg-surface-container-high transition-colors">
+                        View Sample Report
+                    </button>
+</div>
+</div>
+</section>
+<!-- AI Research Terminal (Search) -->
+<section class="w-full px-margin-desktop -mt-24 relative z-20 mb-20">
+<div class="max-w-4xl mx-auto">
+<div class="glass-card rounded-3xl p-3 border border-white/10 shadow-2xl flex items-center gap-3 relative overflow-hidden group">
+<div class="absolute inset-0 bg-gradient-to-r from-google-blue/10 to-transparent opacity-0 group-focus-within:opacity-100 transition-opacity pointer-events-none"></div>
+<span class="material-symbols-outlined text-google-blue ml-4 text-2xl animate-pulse">sparkles</span>
+<input class="w-full bg-transparent border-none text-on-surface focus:ring-0 font-body-lg text-lg placeholder-on-surface-variant/50 py-4" placeholder="Ask anything about stocks, sectors, or macro trends..." type="text"/>
+<button class="bg-surface-container-high/80 p-3 rounded-2xl hover:bg-surface-variant transition-colors border border-outline-variant/50 mr-1 shadow-inner">
+<span class="material-symbols-outlined text-primary">mic</span>
+</button>
+</div>
+<div class="flex flex-wrap gap-3 mt-6 justify-center">
+<button class="glass-card px-5 py-2.5 rounded-xl border border-surface-container-highest text-on-surface-variant font-label-sm text-sm hover:text-on-surface hover:border-google-blue/50 transition-colors flex items-center gap-2">
+<span class="material-symbols-outlined text-[18px]">summarize</span>
+                        Earnings calls analysis
+                    </button>
+<button class="glass-card px-5 py-2.5 rounded-xl border border-surface-container-highest text-on-surface-variant font-label-sm text-sm hover:text-on-surface hover:border-google-blue/50 transition-colors flex items-center gap-2">
+<span class="material-symbols-outlined text-[18px]">memory</span>
+                        Tech sector outlook
+                    </button>
+<button class="glass-card px-5 py-2.5 rounded-xl border border-surface-container-highest text-on-surface-variant font-label-sm text-sm hover:text-on-surface hover:border-google-blue/50 transition-colors flex items-center gap-2">
+<span class="material-symbols-outlined text-[18px]">account_balance</span>
+                        Fed rate impact
+                    </button>
+</div>
+</div>
+</section>
+<!-- Market Pulse Dashboard -->
+<section class="w-full px-margin-desktop py-16 border-y border-outline-variant/30 bg-surface-container-lowest/50 backdrop-blur-sm overflow-hidden relative">
+<!-- Decorative gradient -->
+<div class="absolute right-0 top-0 w-1/3 h-full bg-gradient-to-l from-google-blue/5 to-transparent pointer-events-none"></div>
+<div class="max-w-max-width mx-auto relative z-10">
+<div class="flex justify-between items-end mb-8">
+<h3 class="font-title-lg text-2xl text-on-surface flex items-center gap-2 font-bold tracking-tight">
+<span class="material-symbols-outlined text-google-blue symbol-filled">dashboard</span> Market Dashboard
+                </h3>
+<div class="flex items-center gap-4 text-on-surface-variant text-sm font-medium">
+<span class="flex items-center gap-1.5"><span class="relative flex h-2 w-2"><span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-success opacity-75"></span><span class="relative inline-flex rounded-full h-2 w-2 bg-success"></span></span> Live Updates</span>
+</div>
+</div>
+<div class="grid grid-cols-2 md:grid-cols-4 gap-6">
+<!-- Index Card 1 -->
+<div class="glass-card rounded-2xl p-5 border border-outline-variant/30 hover:border-outline-variant transition-all cursor-pointer group">
+<div class="flex justify-between items-start mb-3">
+<span class="font-label-lg text-sm text-on-surface-variant uppercase tracking-wider">NIFTY 50</span>
+<span class="text-success font-mono text-xs flex items-center bg-success/10 px-2 py-1 rounded-md font-medium border border-success/20">
+<span class="material-symbols-outlined text-[14px]">arrow_upward</span> 0.84%
+                            </span>
+</div>
+<div class="font-headline-md text-3xl font-bold text-on-surface mb-2 font-mono tracking-tight">22,405.60</div>
+<!-- Sophisticated Sparkline -->
+<div class="h-10 w-full relative">
+<svg class="w-full h-full stroke-success fill-none" preserveaspectratio="none" viewbox="0 0 100 20">
+<defs>
+<lineargradient id="grad-success" x1="0%" x2="0%" y1="0%" y2="100%">
+<stop offset="0%" stop-color="#34A853" stop-opacity="0.2"></stop>
+<stop offset="100%" stop-color="#34A853" stop-opacity="0"></stop>
+</lineargradient>
+</defs>
+<path d="M0 15 Q 10 5, 20 10 T 40 12 T 60 5 T 80 15 T 100 2" fill="url(#grad-success)" stroke="none"></path>
+<path d="M0 15 Q 10 5, 20 10 T 40 12 T 60 5 T 80 15 T 100 2" stroke-width="2"></path>
+</svg>
+</div>
+<!-- Volume indicators -->
+<div class="flex gap-0.5 h-6 mt-1 items-end opacity-50 group-hover:opacity-100 transition-opacity">
+<div class="w-full bg-success/20 h-[30%] rounded-t-sm"></div>
+<div class="w-full bg-success/20 h-[50%] rounded-t-sm"></div>
+<div class="w-full bg-success/40 h-[80%] rounded-t-sm"></div>
+<div class="w-full bg-danger/20 h-[40%] rounded-t-sm"></div>
+<div class="w-full bg-success/50 h-[90%] rounded-t-sm"></div>
+<div class="w-full bg-success/20 h-[60%] rounded-t-sm"></div>
+<div class="w-full bg-danger/30 h-[70%] rounded-t-sm"></div>
+<div class="w-full bg-success/40 h-[50%] rounded-t-sm"></div>
+</div>
+</div>
+<!-- Index Card 2 -->
+<div class="glass-card rounded-2xl p-5 border border-outline-variant/30 hover:border-outline-variant transition-all cursor-pointer group">
+<div class="flex justify-between items-start mb-3">
+<span class="font-label-lg text-sm text-on-surface-variant uppercase tracking-wider">SENSEX</span>
+<span class="text-success font-mono text-xs flex items-center bg-success/10 px-2 py-1 rounded-md font-medium border border-success/20">
+<span class="material-symbols-outlined text-[14px]">arrow_upward</span> 0.72%
+                            </span>
+</div>
+<div class="font-headline-md text-3xl font-bold text-on-surface mb-2 font-mono tracking-tight">73,806.15</div>
+<div class="h-10 w-full relative">
+<svg class="w-full h-full stroke-success fill-none" preserveaspectratio="none" viewbox="0 0 100 20">
+<path d="M0 18 Q 15 8, 25 12 T 50 10 T 75 5 T 100 0" fill="url(#grad-success)" stroke="none"></path>
+<path d="M0 18 Q 15 8, 25 12 T 50 10 T 75 5 T 100 0" stroke-width="2"></path>
+</svg>
+</div>
+<div class="flex gap-0.5 h-6 mt-1 items-end opacity-50 group-hover:opacity-100 transition-opacity">
+<div class="w-full bg-success/40 h-[60%] rounded-t-sm"></div>
+<div class="w-full bg-danger/20 h-[30%] rounded-t-sm"></div>
+<div class="w-full bg-success/30 h-[50%] rounded-t-sm"></div>
+<div class="w-full bg-success/60 h-[80%] rounded-t-sm"></div>
+<div class="w-full bg-success/20 h-[40%] rounded-t-sm"></div>
+<div class="w-full bg-danger/40 h-[70%] rounded-t-sm"></div>
+<div class="w-full bg-success/30 h-[60%] rounded-t-sm"></div>
+<div class="w-full bg-success/50 h-[90%] rounded-t-sm"></div>
+</div>
+</div>
+<!-- Index Card 3 -->
+<div class="glass-card rounded-2xl p-5 border border-outline-variant/30 hover:border-outline-variant transition-all cursor-pointer group">
+<div class="flex justify-between items-start mb-3">
+<span class="font-label-lg text-sm text-on-surface-variant uppercase tracking-wider">BANKNIFTY</span>
+<span class="text-danger font-mono text-xs flex items-center bg-danger/10 px-2 py-1 rounded-md font-medium border border-danger/20">
+<span class="material-symbols-outlined text-[14px]">arrow_downward</span> 0.21%
+                            </span>
+</div>
+<div class="font-headline-md text-3xl font-bold text-on-surface mb-2 font-mono tracking-tight">47,321.45</div>
+<div class="h-10 w-full relative">
+<svg class="w-full h-full stroke-danger fill-none" preserveaspectratio="none" viewbox="0 0 100 20">
+<defs>
+<lineargradient id="grad-danger" x1="0%" x2="0%" y1="0%" y2="100%">
+<stop offset="0%" stop-color="#EA4335" stop-opacity="0.2"></stop>
+<stop offset="100%" stop-color="#EA4335" stop-opacity="0"></stop>
+</lineargradient>
+</defs>
+<path d="M0 5 Q 20 2, 40 10 T 60 15 T 80 8 T 100 18" fill="url(#grad-danger)" stroke="none"></path>
+<path d="M0 5 Q 20 2, 40 10 T 60 15 T 80 8 T 100 18" stroke-width="2"></path>
+</svg>
+</div>
+<div class="flex gap-0.5 h-6 mt-1 items-end opacity-50 group-hover:opacity-100 transition-opacity">
+<div class="w-full bg-danger/50 h-[80%] rounded-t-sm"></div>
+<div class="w-full bg-success/20 h-[30%] rounded-t-sm"></div>
+<div class="w-full bg-danger/40 h-[60%] rounded-t-sm"></div>
+<div class="w-full bg-danger/60 h-[90%] rounded-t-sm"></div>
+<div class="w-full bg-success/30 h-[40%] rounded-t-sm"></div>
+<div class="w-full bg-danger/30 h-[50%] rounded-t-sm"></div>
+<div class="w-full bg-danger/20 h-[30%] rounded-t-sm"></div>
+<div class="w-full bg-danger/50 h-[70%] rounded-t-sm"></div>
+</div>
+</div>
+<!-- Index Card 4 -->
+<div class="glass-card rounded-2xl p-5 border border-outline-variant/30 hover:border-outline-variant transition-all cursor-pointer group">
+<div class="flex justify-between items-start mb-3">
+<span class="font-label-lg text-sm text-on-surface-variant uppercase tracking-wider">INDIA VIX</span>
+<span class="text-danger font-mono text-xs flex items-center bg-danger/10 px-2 py-1 rounded-md font-medium border border-danger/20">
+<span class="material-symbols-outlined text-[14px]">arrow_downward</span> 2.45%
+                            </span>
+</div>
+<div class="font-headline-md text-3xl font-bold text-on-surface mb-2 font-mono tracking-tight">15.24</div>
+<div class="h-10 w-full relative">
+<svg class="w-full h-full stroke-danger fill-none" preserveaspectratio="none" viewbox="0 0 100 20">
+<path d="M0 2 Q 20 15, 40 5 T 60 18 T 80 10 T 100 15" fill="url(#grad-danger)" stroke="none"></path>
+<path d="M0 2 Q 20 15, 40 5 T 60 18 T 80 10 T 100 15" stroke-width="2"></path>
+</svg>
+</div>
+<div class="flex gap-0.5 h-6 mt-1 items-end opacity-50 group-hover:opacity-100 transition-opacity">
+<div class="w-full bg-danger/30 h-[50%] rounded-t-sm"></div>
+<div class="w-full bg-danger/50 h-[80%] rounded-t-sm"></div>
+<div class="w-full bg-danger/40 h-[60%] rounded-t-sm"></div>
+<div class="w-full bg-danger/20 h-[30%] rounded-t-sm"></div>
+<div class="w-full bg-success/20 h-[40%] rounded-t-sm"></div>
+<div class="w-full bg-danger/60 h-[90%] rounded-t-sm"></div>
+<div class="w-full bg-danger/30 h-[50%] rounded-t-sm"></div>
+<div class="w-full bg-danger/40 h-[70%] rounded-t-sm"></div>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- AI Hotlist & Orchestration -->
+<section class="w-full px-margin-desktop py-24 bg-surface relative overflow-hidden">
+<!-- Technical Grid Background -->
+<div class="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCI+PHBhdGggZD0iTTAgMGg0MHY0MEgweiIgZmlsbD0ibm9uZSIvPjxwYXRoIGQ9Ik0wIDM5LjVoNDBWMHptMzkuNSAwVjBINHoiIHN0cm9rZT0icmdiYSgyNTUsMjU1LDI1NSwwLjAyKSIgc3Ryb2tlLXdpZHRoPSIxIi8+PC9zdmc+')] pointer-events-none"></div>
+<div class="max-w-max-width mx-auto grid lg:grid-cols-12 gap-12 relative z-10">
+<!-- Multi-Agent Explanation (Left/Sidebar) -->
+<div class="lg:col-span-4 flex flex-col gap-8">
+<div class="mb-2">
+<div class="flex items-center gap-2 mb-3">
+<span class="material-symbols-outlined text-google-blue text-sm">hub</span>
+<span class="text-google-blue font-label-lg text-sm uppercase tracking-widest font-bold">Architecture Diagram</span>
+</div>
+<h2 class="font-headline-lg text-4xl text-on-surface font-bold tracking-tight">Multi-Agent <br/>Orchestration</h2>
+<p class="font-body-md text-body-lg text-on-surface-variant mt-4 leading-relaxed">
+                            SentiNews doesn't rely on a single model. We deploy specialized AI agents that debate and synthesize data to produce high-conviction insights.
+                        </p>
+</div>
+<div class="flex flex-col gap-6 relative">
+<!-- Connecting Line -->
+<div class="absolute left-6 top-8 bottom-8 w-px bg-gradient-to-b from-google-blue/50 via-outline-variant/30 to-transparent"></div>
+<div class="glass-card p-5 rounded-2xl flex gap-5 items-start relative z-10 border-l-4 border-l-google-blue">
+<div class="bg-google-blue/10 p-3 rounded-xl text-google-blue border border-google-blue/20 relative">
+<span class="material-symbols-outlined">forum</span>
+<span class="absolute -top-1 -right-1 flex h-3 w-3"><span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-google-blue opacity-75"></span><span class="relative inline-flex rounded-full h-3 w-3 bg-google-blue border border-surface"></span></span>
+</div>
+<div>
+<h4 class="font-title-lg text-lg text-on-surface mb-1 font-semibold flex justify-between items-center">Sentiment Agent <span class="text-[10px] bg-surface-container-high px-2 py-0.5 rounded text-on-surface-variant font-mono">ACTIVE</span></h4>
+<p class="font-body-md text-on-surface-variant text-sm">Scans thousands of news sources, social feeds, and earnings transcripts for emotional polarity.</p>
+</div>
+</div>
+<div class="glass-card p-5 rounded-2xl flex gap-5 items-start relative z-10 border-l-4 border-l-google-green">
+<div class="bg-success/10 p-3 rounded-xl text-success border border-success/20 relative">
+<span class="material-symbols-outlined">candlestick_chart</span>
+<span class="absolute -top-1 -right-1 flex h-3 w-3"><span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-success opacity-75" style="animation-delay: 0.5s"></span><span class="relative inline-flex rounded-full h-3 w-3 bg-success border border-surface"></span></span>
+</div>
+<div>
+<h4 class="font-title-lg text-lg text-on-surface mb-1 font-semibold flex justify-between items-center">Technical Agent <span class="text-[10px] bg-surface-container-high px-2 py-0.5 rounded text-on-surface-variant font-mono">ACTIVE</span></h4>
+<p class="font-body-md text-on-surface-variant text-sm">Analyzes price action, volume profiles, and momentum indicators in real-time.</p>
+</div>
+</div>
+<div class="glass-card p-5 rounded-2xl flex gap-5 items-start relative z-10 border-l-4 border-l-google-yellow">
+<div class="bg-warning/10 p-3 rounded-xl text-warning border border-warning/20 relative">
+<span class="material-symbols-outlined">description</span>
+<span class="absolute -top-1 -right-1 flex h-3 w-3"><span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-warning opacity-75" style="animation-delay: 1s"></span><span class="relative inline-flex rounded-full h-3 w-3 bg-warning border border-surface"></span></span>
+</div>
+<div>
+<h4 class="font-title-lg text-lg text-on-surface mb-1 font-semibold flex justify-between items-center">Filing Verification <span class="text-[10px] bg-surface-container-high px-2 py-0.5 rounded text-on-surface-variant font-mono">ACTIVE</span></h4>
+<p class="font-body-md text-on-surface-variant text-sm">Cross-references sentiment claims against SEC/BSE official corporate filings to hallucination-proof insights.</p>
+</div>
+</div>
+</div>
+</div>
+<!-- AI Hotlist Terminal (Right/Main) -->
+<div class="lg:col-span-8 flex flex-col">
+<div class="glass-card rounded-2xl border border-outline-variant/50 overflow-hidden flex flex-col h-full shadow-2xl relative">
+<!-- Terminal Header -->
+<div class="p-4 border-b border-outline-variant/50 flex justify-between items-center bg-surface-container-lowest/80 backdrop-blur-md">
+<div class="flex items-center gap-3">
+<div class="flex gap-1.5">
+<div class="w-3 h-3 rounded-full bg-outline-variant/50"></div>
+<div class="w-3 h-3 rounded-full bg-outline-variant/50"></div>
+<div class="w-3 h-3 rounded-full bg-outline-variant/50"></div>
+</div>
+<h3 class="font-mono text-sm text-on-surface flex items-center gap-2 font-semibold">
+<span class="material-symbols-outlined text-google-blue text-sm symbol-filled">terminal</span> sentinews_engine --hotlist
+                        </h3>
+</div>
+<button class="text-google-blue font-label-lg text-xs hover:underline flex items-center gap-1 uppercase tracking-wider font-bold">
+                            View Full Screener <span class="material-symbols-outlined text-[14px]">chevron_right</span>
+</button>
+</div>
+<!-- Terminal Content -->
+<div class="overflow-x-auto w-full bg-[#0b0e15]/90 flex-grow font-mono">
+<table class="w-full text-left border-collapse whitespace-nowrap">
+<thead>
+<tr class="border-b border-outline-variant/30 text-on-surface-variant text-xs uppercase tracking-wider bg-surface-container-highest/20">
+<th class="p-4 font-semibold w-64">Asset</th>
+<th class="p-4 font-semibold w-32">LTP</th>
+<th class="p-4 font-semibold w-64">AI Sentiment (Real-time)</th>
+<th class="p-4 font-semibold w-32">Confidence</th>
+<th class="p-4 font-semibold">Key Catalyst</th>
+</tr>
+</thead>
+<tbody class="text-sm divide-y divide-outline-variant/20">
+<tr class="terminal-row group">
+<td class="p-4 border-l-2 border-transparent group-hover:border-google-blue">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded bg-surface-container flex items-center justify-center font-bold text-xs text-on-surface border border-outline-variant/30">RELI</div>
+<div>
+<div class="font-semibold text-on-surface">RELIANCE</div>
+<div class="text-[10px] text-on-surface-variant font-sans">Reliance Industries</div>
+</div>
+</div>
+</td>
+<td class="p-4">
+<div class="text-on-surface">₹2,954.20</div>
+<div class="text-success text-[10px] flex items-center mt-0.5"><span class="material-symbols-outlined text-[12px]">arrow_drop_up</span> 1.2%</div>
+</td>
+<td class="p-4">
+<div class="flex items-center gap-3">
+<div class="w-24 h-1.5 bg-surface-container-highest rounded-full overflow-hidden">
+<div class="h-full bg-success w-[85%] shadow-[0_0_8px_#34A853]"></div>
+</div>
+<span class="text-success text-xs font-semibold">85 [BULL]</span>
+</div>
+</td>
+<td class="p-4 text-xs text-on-surface-variant">
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[14px] text-google-blue">verified_user</span> 92%
+                                    </div>
+</td>
+<td class="p-4 text-xs text-on-surface-variant font-sans truncate max-w-[200px]" title="Strong Q3 retail margins beat consensus.">
+<span class="text-google-blue font-mono mr-2">&gt;</span>Strong Q3 retail margins beat consensus.
+                                </td>
+</tr>
+<tr class="terminal-row group">
+<td class="p-4 border-l-2 border-transparent group-hover:border-google-blue">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded bg-surface-container flex items-center justify-center font-bold text-xs text-on-surface border border-outline-variant/30">TCS</div>
+<div>
+<div class="font-semibold text-on-surface">TCS</div>
+<div class="text-[10px] text-on-surface-variant font-sans">Tata Consultancy</div>
+</div>
+</div>
+</td>
+<td class="p-4">
+<div class="text-on-surface">₹4,120.50</div>
+<div class="text-danger text-[10px] flex items-center mt-0.5"><span class="material-symbols-outlined text-[12px]">arrow_drop_down</span> 0.5%</div>
+</td>
+<td class="p-4">
+<div class="flex items-center gap-3">
+<div class="w-24 h-1.5 bg-surface-container-highest rounded-full overflow-hidden">
+<div class="h-full bg-warning w-[45%] shadow-[0_0_8px_#FBBC05]"></div>
+</div>
+<span class="text-warning text-xs font-semibold">45 [NEUT]</span>
+</div>
+</td>
+<td class="p-4 text-xs text-on-surface-variant">
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[14px] text-google-blue">verified_user</span> 88%
+                                    </div>
+</td>
+<td class="p-4 text-xs text-on-surface-variant font-sans truncate max-w-[200px]" title="US client discretionary spend remains muted.">
+<span class="text-warning font-mono mr-2">&gt;</span>US client discretionary spend remains muted.
+                                </td>
+</tr>
+<tr class="terminal-row group">
+<td class="p-4 border-l-2 border-transparent group-hover:border-google-blue">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded bg-surface-container flex items-center justify-center font-bold text-xs text-on-surface border border-outline-variant/30">HDFC</div>
+<div>
+<div class="font-semibold text-on-surface">HDFCBANK</div>
+<div class="text-[10px] text-on-surface-variant font-sans">HDFC Bank Ltd.</div>
+</div>
+</div>
+</td>
+<td class="p-4">
+<div class="text-on-surface">₹1,432.80</div>
+<div class="text-success text-[10px] flex items-center mt-0.5"><span class="material-symbols-outlined text-[12px]">arrow_drop_up</span> 2.1%</div>
+</td>
+<td class="p-4">
+<div class="flex items-center gap-3">
+<div class="w-24 h-1.5 bg-surface-container-highest rounded-full overflow-hidden">
+<div class="h-full bg-success w-[72%] shadow-[0_0_8px_#34A853]"></div>
+</div>
+<span class="text-success text-xs font-semibold">72 [BULL]</span>
+</div>
+</td>
+<td class="p-4 text-xs text-on-surface-variant">
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[14px] text-google-blue">verified_user</span> 95%
+                                    </div>
+</td>
+<td class="p-4 text-xs text-on-surface-variant font-sans truncate max-w-[200px]" title="Deposit growth accelerates post-merger integration.">
+<span class="text-google-blue font-mono mr-2">&gt;</span>Deposit growth accelerates post-merger...
+                                </td>
+</tr>
+<tr class="terminal-row group">
+<td class="p-4 border-l-2 border-transparent group-hover:border-google-blue">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded bg-surface-container flex items-center justify-center font-bold text-xs text-on-surface border border-outline-variant/30">INFY</div>
+<div>
+<div class="font-semibold text-on-surface">INFY</div>
+<div class="text-[10px] text-on-surface-variant font-sans">Infosys Ltd.</div>
+</div>
+</div>
+</td>
+<td class="p-4">
+<div class="text-on-surface">₹1,642.10</div>
+<div class="text-danger text-[10px] flex items-center mt-0.5"><span class="material-symbols-outlined text-[12px]">arrow_drop_down</span> 1.4%</div>
+</td>
+<td class="p-4">
+<div class="flex items-center gap-3">
+<div class="w-24 h-1.5 bg-surface-container-highest rounded-full overflow-hidden">
+<div class="h-full bg-danger w-[32%] shadow-[0_0_8px_#EA4335]"></div>
+</div>
+<span class="text-danger text-xs font-semibold">32 [BEAR]</span>
+</div>
+</td>
+<td class="p-4 text-xs text-on-surface-variant">
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[14px] text-google-blue">verified_user</span> 81%
+                                    </div>
+</td>
+<td class="p-4 text-xs text-on-surface-variant font-sans truncate max-w-[200px]" title="Margin pressure guidance lower than street estimates.">
+<span class="text-danger font-mono mr-2">&gt;</span>Margin pressure guidance lower than street.
+                                </td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="p-3 bg-surface-container-lowest border-t border-outline-variant/30 flex justify-between items-center font-mono text-[10px] text-on-surface-variant">
+<div class="flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-success animate-pulse"></span> SYSTEM: ONLINE
+                            </div>
+<div class="flex gap-4">
+<span>LATENCY: 42ms</span>
+<span>MODEL: GEMINI-PRO-1.5</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+</section>
+</main>
+<!-- Footer -->
+<footer class="bg-surface-container-lowest dark:bg-surface-container-lowest border-t border-outline-variant/30 dark:border-outline-variant mt-auto relative z-20">
+<div class="w-full py-16 px-margin-desktop max-w-max-width mx-auto">
+<div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-8 mb-12 border-b border-outline-variant/20 pb-12">
+<div class="flex flex-col gap-3">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-google-blue symbol-filled text-2xl">insights</span>
+<span class="font-headline-md text-2xl font-bold text-primary dark:text-primary tracking-tight">SentiNews AI</span>
+</div>
+<p class="text-on-surface-variant font-body-md text-sm max-w-sm">Institutional-grade financial intelligence, powered by advanced multi-agent AI architectures and Google Cloud.</p>
+</div>
+<div class="flex flex-wrap gap-x-8 gap-y-4">
+<div class="flex flex-col gap-2">
+<span class="font-label-sm text-xs font-bold text-on-surface uppercase tracking-wider mb-1">Product</span>
+<a class="text-on-surface-variant hover:text-google-blue transition-colors text-sm" href="#">Research Terminal</a>
+<a class="text-on-surface-variant hover:text-google-blue transition-colors text-sm" href="#">Market Dashboards</a>
+<a class="text-on-surface-variant hover:text-google-blue transition-colors text-sm" href="#">API Access</a>
+</div>
+<div class="flex flex-col gap-2">
+<span class="font-label-sm text-xs font-bold text-on-surface uppercase tracking-wider mb-1">Company</span>
+<a class="text-on-surface-variant hover:text-google-blue transition-colors text-sm" href="#">About Us</a>
+<a class="text-on-surface-variant hover:text-google-blue transition-colors text-sm" href="#">Trust Center</a>
+<a class="text-on-surface-variant hover:text-google-blue transition-colors text-sm" href="#">Contact Sales</a>
+</div>
+</div>
+</div>
+<div class="flex flex-col md:flex-row justify-between items-center gap-6">
+<p class="text-on-surface-variant/70 font-body-md text-xs text-center md:text-left max-w-3xl">
+<strong class="text-on-surface-variant">Institutional Disclaimer:</strong> SentiNews AI provides algorithmic data synthesis for informational purposes only. It does not constitute financial advice, investment recommendations, or an offer to buy/sell securities. Past performance of AI models is not indicative of future market behavior. Users should verify all information with primary sources.
+                </p>
+<div class="flex items-center gap-4 text-on-surface-variant/70 text-xs shrink-0">
+<span>© 2024 SentiNews AI</span>
+<span class="w-1 h-1 rounded-full bg-outline-variant/50"></span>
+<a class="hover:text-on-surface transition-colors" href="#">Privacy</a>
+<span class="w-1 h-1 rounded-full bg-outline-variant/50"></span>
+<a class="hover:text-on-surface transition-colors" href="#">Terms</a>
+</div>
+</div>
+</div>
+</footer>
+</body></html>

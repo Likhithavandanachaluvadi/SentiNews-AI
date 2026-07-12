@@ -1,0 +1,395 @@
+@import "tailwindcss";
+
+* {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  -ms-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+html.dark {
+  color-scheme: dark;
+}
+
+body {
+  background-color: #11131a;
+  color: #e1e2eb;
+  font-family: "Inter", sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-x: hidden;
+}
+
+::selection {
+  background-color: #4285f4;
+  color: #ffffff;
+}
+
+/* Material Icons */
+.material-symbols-outlined {
+  font-variation-settings:
+    "FILL" 0,
+    "wght" 400,
+    "GRAD" 0,
+    "opsz" 24;
+}
+
+.symbol-filled {
+  font-variation-settings:
+    "FILL" 1,
+    "wght" 400,
+    "GRAD" 0,
+    "opsz" 24;
+}
+
+/* Grid Background Pattern */
+.bg-grid-pattern {
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+/* Glass Card Styling */
+.glass-card {
+  background: rgba(30, 32, 38, 0.4);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+}
+
+/* Terminal Rows */
+.terminal-row {
+  @apply transition-all duration-200;
+}
+
+.terminal-row:hover {
+  background: rgba(66, 133, 244, 0.05);
+  border-left: 2px solid #4285f4;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* Markdown Rendering System */
+.markdown-body {
+  font-size: 0.95rem;
+  line-height: 1.7;
+  color: rgba(225, 226, 235, 0.9);
+}
+
+.markdown-body h1 {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: #ffffff;
+  margin-top: 1.75rem;
+  margin-bottom: 0.75rem;
+  letter-spacing: -0.02em;
+}
+
+.markdown-body h2 {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #ffffff;
+  margin-top: 1.5rem;
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.35rem;
+  border-bottom: 1px solid rgba(66, 133, 244, 0.2);
+  letter-spacing: -0.01em;
+}
+
+.markdown-body h3 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: rgb(173, 198, 255);
+  margin-top: 1.25rem;
+  margin-bottom: 0.5rem;
+}
+
+.markdown-body p {
+  margin-bottom: 1.2rem;
+}
+
+.markdown-body ul {
+  list-style-type: none;
+  padding-left: 1.5rem;
+  margin-bottom: 1.2rem;
+}
+
+.markdown-body ul li {
+  position: relative;
+  margin-bottom: 0.5rem;
+}
+
+.markdown-body ul li::before {
+  content: "•";
+  color: #4285f4;
+  font-weight: bold;
+  font-size: 1.2rem;
+  position: absolute;
+  left: -1rem;
+  top: -0.1rem;
+}
+
+.markdown-body ol {
+  list-style-type: decimal;
+  padding-left: 1.5rem;
+  margin-bottom: 1.2rem;
+}
+
+.markdown-body ol li {
+  margin-bottom: 0.5rem;
+  padding-left: 0.25rem;
+}
+
+.markdown-body strong {
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.markdown-body table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1.5rem 0;
+  overflow-x: auto;
+  display: block;
+}
+
+.markdown-body th,
+.markdown-body td {
+  border: 1px solid rgba(132, 144, 159, 0.3);
+  padding: 0.75rem 1rem;
+  text-align: left;
+}
+
+.markdown-body th {
+  background-color: rgba(66, 133, 244, 0.1);
+  font-weight: 600;
+  color: rgb(173, 198, 255);
+}
+
+.markdown-body tr:nth-child(even) {
+  background-color: rgba(66, 133, 244, 0.05);
+}
+
+.markdown-body blockquote {
+  border-left: 4px solid #4285f4;
+  background-color: rgba(66, 133, 244, 0.05);
+  padding: 0.75rem 1.25rem;
+  margin: 1.5rem 0;
+  border-radius: 0 8px 8px 0;
+  font-style: italic;
+  color: rgb(194, 198, 213);
+}
+
+.markdown-body code {
+  font-family: "JetBrains Mono", monospace;
+  background-color: rgba(66, 133, 244, 0.1);
+  padding: 0.2rem 0.4rem;
+  border-radius: 4px;
+  font-size: 0.85em;
+  color: #fbbc06;
+}
+
+/* ============================================================
+   ANIMATIONS & EFFECTS
+   ============================================================ */
+
+/* Pulse Line Animation - for data visualization */
+@keyframes pulse-line {
+  0% {
+    opacity: 0;
+    transform: translateY(-100%);
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(100%);
+  }
+}
+
+.data-line {
+  animation: pulse-line 4s infinite linear;
+}
+
+/* Smooth Fade In */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Slide Up Animation */
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Slide In From Left */
+@keyframes slideInLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* Slide In From Right */
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* Glow Effect */
+@keyframes glow {
+  0% {
+    box-shadow: 0 0 5px rgba(66, 133, 244, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 20px rgba(66, 133, 244, 0.6);
+  }
+  100% {
+    box-shadow: 0 0 5px rgba(66, 133, 244, 0.3);
+  }
+}
+
+/* Scale Pulse */
+@keyframes scalePulse {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* Float Animation */
+@keyframes float {
+  0% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+  100% {
+    transform: translateY(0px);
+  }
+}
+
+/* Shimmer Animation */
+@keyframes shimmer {
+  0% {
+    background-position: -1000px 0;
+  }
+  100% {
+    background-position: 1000px 0;
+  }
+}
+
+/* Smooth Scale Transform on Hover - utility class */
+.hover-scale {
+  transition:
+    transform 0.3s ease,
+    box-shadow 0.3s ease;
+}
+
+.hover-scale:hover {
+  transform: scale(1.02);
+  box-shadow: 0 8px 24px rgba(66, 133, 244, 0.15);
+}
+
+/* Smooth Color Transition */
+.smooth-transition {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Border Highlight Effect */
+.border-highlight {
+  position: relative;
+  overflow: hidden;
+}
+
+.border-highlight::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.3),
+    transparent
+  );
+  transition: left 0.5s ease;
+}
+
+.border-highlight:hover::after {
+  left: 100%;
+}
+
+/* Fade-in-up for list items */
+.fade-in-up {
+  animation: slideUp 0.6s ease-out forwards;
+}
+
+.fade-in-up:nth-child(1) {
+  animation-delay: 0.1s;
+}
+.fade-in-up:nth-child(2) {
+  animation-delay: 0.2s;
+}
+.fade-in-up:nth-child(3) {
+  animation-delay: 0.3s;
+}
+.fade-in-up:nth-child(4) {
+  animation-delay: 0.4s;
+}
+.fade-in-up:nth-child(5) {
+  animation-delay: 0.5s;
+}
