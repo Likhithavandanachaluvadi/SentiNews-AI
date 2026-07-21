@@ -4,6 +4,9 @@ Ensures all API responses conform to the standard response schema.
 Transforms LangGraph outputs into frontend-friendly UnifiedResponseEnvelope.
 """
 
+from langchain_groq import ChatGroq
+from src.core.config import settings
+from langchain_core.prompts import ChatPromptTemplate
 import uuid
 from datetime import datetime
 from typing import Optional, Dict, List, Any
@@ -54,9 +57,7 @@ UI_BLOCKS_BY_INTENT = {
     ],
     "MARKET_OVERVIEW": [
         "MarketTrends",
-        "SectorPerformance",
         "NewsHighlights",
-        "RiskMetrics",
     ],
     "SENTIMENT_PULSE": [
         "SentimentMeter",
@@ -67,14 +68,28 @@ UI_BLOCKS_BY_INTENT = {
     "EDUCATIONAL": [
         "EducationalExplainer",
         "Glossary",
-        "ConceptCards",
-        "References",
     ],
     "COMPARISON": [
         "ComparisonTable",
-        "ChartComparison",
         "Strengths",
         "Weaknesses",
+    ],
+    "COMPANY_COMPARISON": [
+        "ComparisonTable",
+        "Strengths",
+        "Weaknesses",
+    ],
+    "SECTOR_OUTLOOK": [
+        "SectorTrends",
+        "MacroDrivers",
+        "IndustryNews",
+        "Citations",
+    ],
+    "THEME_ANALYSIS": [
+        "TechnologyTrends",
+        "Adoption",
+        "Research",
+        "Citations",
     ],
     "RESTRICTED_ADVISORY": [
         "SafeRefusal",
@@ -106,6 +121,8 @@ INTENT_ALLOWED_SECTIONS = {
     "NEWS_ANALYSIS": {"sentiment"},
     "SENTIMENT_PULSE": {"sentiment"},
     "MARKET_OVERVIEW": set(),
+    "SECTOR_OUTLOOK": {"sentiment"},
+    "THEME_ANALYSIS": {"sentiment"},
     "RESTRICTED_ADVISORY": set(),
     "MACROECONOMIC": set(),
     "EARNINGS_REPORT": {"fundamentals", "sentiment"},
@@ -137,6 +154,15 @@ INTENT_RESPONSE_BLOCKS = {
     },
     "COMPARISON": {
         "comparison_summary", "comparison_table", "strengths", "weaknesses",
+    },
+    "COMPANY_COMPARISON": {
+        "comparison_summary", "comparison_table", "strengths", "weaknesses",
+    },
+    "SECTOR_OUTLOOK": {
+        "market_overview", "news_summary", "trends",
+    },
+    "THEME_ANALYSIS": {
+        "market_overview", "news_summary", "trends",
     },
     "MARKET_OVERVIEW": {
         "market_overview", "trends", "sectors",
@@ -211,7 +237,7 @@ def _section(
         "confidence": _confidence_score(report),
         "warnings": [warning] if warning else [],
         "data_freshness": freshness,
-        "source_quality": "Tier 1" if name in ("fundamentals", "technicals") and populated else "Tier 2" if populated else "Unavailable",
+        "source_quality": "available" if populated else "unavailable",
         "retrieval_status": "verified" if populated else "missing",
     }
 
@@ -424,29 +450,72 @@ def build_sections(
     }
 
 
-def extract_citations_from_context(context: Optional[List[Any]]) -> List[Dict[str, str]]:
+def extract_citations_from_context(
+    context: Optional[List[Any]],
+    news_articles: Optional[List[Dict[str, Any]]] = None,
+) -> List[Dict[str, str]]:
     citations: List[Dict[str, str]] = []
     for ctx in context or []:
         ctx_str = str(ctx).strip()
-        if ctx_str.startswith("[") and " - " in ctx_str:
-            try:
-                date_part, rest = ctx_str.split("] ", 1)
-                source_part, title_desc = rest.split(" - ", 1)
-                title = title_desc.split(": ", 1)[0]
-                citations.append({
-                    "source_name": source_part.strip(),
-                    "metric": title.strip()[:120],
-                    "value": date_part[1:].strip(),
-                    "trust_tier": "Tier 2",
-                })
-            except Exception:
-                continue
+        if ctx_str.startswith("["):
+            first_line = ctx_str.splitlines()[0]
+            if " -- " in first_line:
+                # SourceRanker format: [DATE] Source (Type | Trust=N | Evidence=N) -- Title
+                try:
+                    date_part, rest = first_line.split("] ", 1)
+                    date_val = date_part[1:].strip()
+                    # Split on " -- " to separate meta from title
+                    meta_part, title = rest.split(" -- ", 1)
+                    title = title.strip()
+                    # source name is everything before the first " ("
+                    source_name, _, _ = meta_part.partition(" (")
+                    source_name = source_name.strip()
+
+                    # Look up the ranked article by exact title match
+                    matching_article = None
+                    if news_articles:
+                        for article in news_articles:
+                            if article.get("title", "").strip() == title:
+                                matching_article = article
+                                break
+
+                    citation: Dict[str, Any] = {
+                        "source_name": source_name,
+                        "metric": title[:120],
+                        "value": date_val,
+                    }
+                    # Propagate SourceRanker fields if present — never invent them
+                    if matching_article:
+                        if "trust_score" in matching_article:
+                            citation["trust_score"] = matching_article["trust_score"]
+                        if "source_tier_label" in matching_article:
+                            citation["source_tier_label"] = matching_article["source_tier_label"]
+                        if "evidence_score" in matching_article:
+                            citation["evidence_score"] = matching_article["evidence_score"]
+                        if "source_type" in matching_article:
+                            citation["source_type"] = matching_article["source_type"]
+                    citations.append(citation)
+                except Exception:
+                    continue
+            elif " - " in first_line:
+                # Legacy format: [DATE] Source - Title: Description
+                try:
+                    date_part, rest = first_line.split("] ", 1)
+                    source_part, title_desc = rest.split(" - ", 1)
+                    title = title_desc.split(": ", 1)[0].strip()
+                    citations.append({
+                        "source_name": source_part.strip(),
+                        "metric": title[:120],
+                        "value": date_part[1:].strip(),
+                    })
+                except Exception:
+                    continue
         elif "financial snapshot" in ctx_str.lower() or "screener" in ctx_str.lower():
+            # Structured market data — does not go through SourceRanker; no trust fields
             citations.append({
                 "source_name": "yFinance/Screener",
                 "metric": ctx_str.splitlines()[0][:120],
                 "value": "live market context",
-                "trust_tier": "Tier 1",
             })
     return citations[:20]
 
@@ -560,7 +629,7 @@ def _build_source_links(
         )
         title = _source_value(article, "title") or f"{publisher} article"
         provider = _source_value(article, "provider")
-        source_type = publisher or provider or "News Article"
+        source_type = article.get("source_type") or publisher or provider or "News Article"
 
         _add_source(
             sources_list,
@@ -582,6 +651,307 @@ def _build_source_links(
         )
 
     return sources_list
+
+
+CONVERSATIONAL_REWRITE_SYSTEM = """You are an experienced, SEBI-compliant Institutional Financial Research Analyst.
+Your task is to take a structured equity research summary and transform it into a natural, conversational explanation following a target RESPONSE PLAN and INTENT STRATEGY.
+
+========================================================
+INTENT STRATEGIES
+========================================================
+Organize the explanation according to the target strategy's flow sequence:
+
+1. strategy = "company_overview" (e.g. general inquiries like "How is TCS?")
+   - Flow: Overall company health -> Biggest strength -> Main concern -> Natural educational follow-up
+   - Priorities: Business model strength, profitability, competitive position.
+   - Avoid: Dictionary definitions of metrics, long technical explanations.
+
+2. strategy = "company_comparison" (e.g. "Compare TCS and Infosys")
+   - Flow: Quick relative comparison -> Where Company A is stronger -> Where Company B is stronger -> Balanced conclusion
+   - Priorities: Relative strengths, relative weaknesses, business differences.
+   - Avoid: Repeating metrics, duplicate sections.
+
+3. strategy = "sector_outlook" (e.g. "Indian IT sector outlook")
+   - Flow: Current sector outlook -> Growth drivers -> Key challenges -> Things to watch
+   - Priorities: Industry trends, demand dynamics, macro environment, regulatory policies, technology shifts.
+   - Avoid: Specific company-level ratios (e.g., ROE/ROCE) unless directly relevant.
+
+4. strategy = "news_analysis" (e.g. "Why is Tesla falling today?")
+   - Flow: What happened (the news catalyst) -> Why it matters -> Possible impact -> Follow-up
+   - Priorities: Recent developments, business impact, market sentiment.
+   - Avoid: Long company history or legacy details.
+
+5. strategy = "educational" (e.g. "Explain ROE")
+   - Flow: Plain-English definition -> Simple real-world analogy or example -> Why investors care -> Related concepts
+   - Priorities: Learning, clarity, simple examples.
+   - Avoid: Deep analysis of a specific company.
+
+6. strategy = "fundamental_analysis" (e.g. "Analyze TCS fundamentals")
+   - Flow: Financial health check -> Profitability analysis -> Valuation considerations -> Overall interpretation
+   - Priorities: Key financial metrics, business quality, valuation.
+   - Avoid: Technical indicator details.
+
+7. strategy = "technical_analysis" (e.g. "Technical analysis of TCS")
+   - Flow: Trend analysis -> Momentum indicators -> Support and resistance levels -> Technical interpretation
+   - Priorities: Price action, indicators, trends.
+   - Avoid: Core fundamental discussions (e.g., margins, balance sheet).
+
+========================================================
+ADAPTIVE MODE ADJUSTMENTS (LENGTH & DETAIL)
+========================================================
+- mode = "quick_summary": Output maximum 2 short paragraphs following the first part of the strategy flow. Do NOT explain or list metrics.
+- mode = "analytical_explanation": Focus on explanation and reasoning, bringing in key metrics only if they directly support the answer.
+- mode = "educational_mode": Focus on clear conceptual teaching and simple examples.
+- mode = "research_mode": Provide a complete, detailed conversational explanation following the full strategy flow.
+
+========================================================
+CONVERSATION AND DEDUPLICATION RULES
+========================================================
+- Answer first: Provide the direct answer or main takeaway in the opening sentence.
+- Explain second: Provide reasoning, then evidence.
+- Offer to continue: Naturally end with an educational follow-up question/option.
+- Do NOT expose planning labels: Never write structural headers or labels like "Overall Assessment", "Top Strength", "Biggest Risk", etc. Weave these sections into smooth, conversational paragraphs using natural transitions (e.g. "Overall, TCS continues to look...", "The strongest aspect of the company is...", "The biggest challenge currently is...").
+- Deduplication: Never repeat the same fact, strength, or risk. Keep each insight unique.
+
+========================================================
+SEBI COMPLIANCE REQUIREMENTS (CRITICAL)
+========================================================
+- NEVER use target-directed recommendations or action-oriented advisory phrasing:
+  * Do NOT write: "Investors should...", "We recommend...", "You should buy...", "I recommend holding...", "This is a good investment...".
+  * Replace with neutral, educational phrasing: "The data indicates...", "The metrics suggest...", "One interpretation is...", "This may show...".
+- Never recommend buying, selling, holding, or exiting.
+- Never suggest entry/target prices or stop losses.
+- Never guarantee or project returns.
+- Keep the tone professional, calm, clear, educational, and analytical.
+"""
+
+CONVERSATIONAL_REWRITE_USER = """Original User Query: {query}
+Target Response Plan: {plan_json}
+Target Intent Strategy: {strategy_json}
+
+Original Structured Report content to explain:
+{original_report_text}
+
+Provide the conversational explanation following the Response Plan and Intent Strategy:"""
+
+def _plan_response(query: str, primary_intent: str, complexity_level: str) -> dict:
+    query_lower = query.lower().strip()
+    
+    # 1. Determine mode
+    educational_keywords = [
+        "explain", "what is", "how does", "what does", "define", "meaning of", 
+        "concept", "education", "beginner", "new to", "tutorial", "learn"
+    ]
+    if primary_intent == "EDUCATIONAL" or (any(kw in query_lower for kw in educational_keywords) and not any(kw in query_lower for kw in ["report", "comprehensive", "deep", "detailed"])):
+        mode = "educational_mode"
+        sections = ["concept", "example", "importance", "related"]
+        hidden = ["metrics", "comparison", "technical_details", "risks", "scenarios"]
+        follow_up = True
+    elif complexity_level == "DEEP" or any(kw in query_lower for kw in ["comprehensive", "detailed", "deep", "thorough", "full report", "complete analysis", "exhaustive", "research note"]):
+        mode = "research_mode"
+        sections = ["overall", "fundamentals", "technicals", "sentiment", "scenarios", "risks", "thesis"]
+        hidden = []
+        follow_up = True
+    elif primary_intent in ("COMPARISON", "STOCK_MOVEMENT") or any(kw in query_lower for kw in ["why", "explain why", "compare", "strengths", "weaknesses", "versus", "vs", "difference between", "rationale", "drivers", "catalysts"]):
+        mode = "analytical_explanation"
+        sections = ["overall", "reasoning", "evidence", "meaning", "comparison"]
+        hidden = ["definitions", "unrelated_metrics"]
+        follow_up = True
+    else:
+        mode = "quick_summary"
+        sections = ["overall", "top_strength", "top_risk"]
+        hidden = ["metrics", "comparison", "technical_details", "definitions", "scenarios"]
+        follow_up = True
+
+    return {
+        "mode": mode,
+        "sections": sections,
+        "hidden": hidden,
+        "follow_up": follow_up
+    }
+
+def _select_response_strategy(query: str, primary_intent: str) -> dict:
+    query_lower = query.lower().strip()
+    
+    educational_keywords = [
+        "explain", "what is", "how does", "what does", "define", "meaning of", 
+        "concept", "education", "beginner", "new to", "tutorial", "learn"
+    ]
+    if primary_intent == "EDUCATIONAL" or (any(kw in query_lower for kw in educational_keywords) and not any(kw in query_lower for kw in ["report", "comprehensive", "deep", "detailed"])):
+        return {
+            "strategy": "educational",
+            "conversation_flow": [
+                "definition",
+                "simple_example",
+                "why_it_matters",
+                "related_concepts"
+            ],
+            "priority_topics": ["learning", "clarity", "examples"],
+            "avoid_topics": ["company_analysis"]
+        }
+        
+    comparison_keywords = ["compare", "versus", "vs", "difference between"]
+    if primary_intent == "COMPARISON" or any(kw in query_lower for kw in comparison_keywords):
+        return {
+            "strategy": "company_comparison",
+            "conversation_flow": [
+                "quick_comparison",
+                "company_a_stronger",
+                "company_b_stronger",
+                "balanced_conclusion"
+            ],
+            "priority_topics": ["relative_strengths", "relative_weaknesses", "business_differences"],
+            "avoid_topics": ["repeating_metrics", "duplicate_sections"]
+        }
+        
+    if "sector" in query_lower or "industry" in query_lower or primary_intent == "MARKET_OVERVIEW":
+        return {
+            "strategy": "sector_outlook",
+            "conversation_flow": [
+                "current_sector_outlook",
+                "growth_drivers",
+                "challenges",
+                "things_to_watch"
+            ],
+            "priority_topics": ["industry_trends", "demand", "macro", "policy", "technology"],
+            "avoid_topics": ["company_level_ratios", "roe_roce"]
+        }
+        
+    news_keywords = ["news", "today", "falling", "rising", "fell", "rose", "drop", "jump", "latest"]
+    if primary_intent in ("NEWS_ANALYSIS", "STOCK_MOVEMENT") or any(kw in query_lower for kw in news_keywords):
+        return {
+            "strategy": "news_analysis",
+            "conversation_flow": [
+                "what_happened",
+                "why_it_matters",
+                "possible_impact",
+                "follow_up"
+            ],
+            "priority_topics": ["recent_developments", "business_impact", "market_sentiment"],
+            "avoid_topics": ["long_company_history"]
+        }
+        
+    fundamental_keywords = ["fundamental", "fundamentals", "financial health", "earnings", "balance sheet", "income statement", "ratios", "revenue", "profitability"]
+    if primary_intent == "FUNDAMENTAL_ANALYSIS" or any(kw in query_lower for kw in fundamental_keywords):
+        return {
+            "strategy": "fundamental_analysis",
+            "conversation_flow": [
+                "financial_health",
+                "profitability",
+                "valuation",
+                "overall_interpretation"
+            ],
+            "priority_topics": ["financial_metrics", "business_quality", "valuation"],
+            "avoid_topics": ["technical_indicators"]
+        }
+        
+    technical_keywords = ["technical", "technicals", "chart", "indicators", "trend", "rsi", "macd", "sma", "support", "resistance"]
+    if primary_intent == "TECHNICAL_ANALYSIS" or any(kw in query_lower for kw in technical_keywords):
+        return {
+            "strategy": "technical_analysis",
+            "conversation_flow": [
+                "trend",
+                "momentum",
+                "support_resistance",
+                "interpretation"
+            ],
+            "priority_topics": ["price_action", "indicators", "trend"],
+            "avoid_topics": ["fundamental_discussion"]
+        }
+        
+    return {
+        "strategy": "company_overview",
+        "conversation_flow": [
+            "overall",
+            "strength",
+            "concern",
+            "follow_up"
+        ],
+        "priority_topics": ["financial_health", "profitability", "competitive_position"],
+        "avoid_topics": ["metric_definitions", "peer_details"]
+    }
+
+def _rewrite_conversational(query: str, final_report: dict, primary_intent: str, complexity_level: str = "LIGHT") -> str:
+    if not settings.GROQ_API_KEY:
+        logger.warning("Groq API Key missing. Skipping conversational rewrite fallback to original narrative.")
+        return final_report.get("executive_summary", "")
+
+    plan = _plan_response(query, primary_intent, complexity_level)
+    strategy = _select_response_strategy(query, primary_intent)
+    logger.info(f"Conversational rewrite plan: Query='{query}' | Plan={plan} | Strategy={strategy}")
+
+    try:
+        import json
+        llm = ChatGroq(
+            temperature=0.3,
+            model_name="llama-3.1-8b-instant",
+            api_key=settings.GROQ_API_KEY
+        )
+        
+        report_text = f"Executive Summary: {final_report.get('executive_summary', '')}\n"
+        if final_report.get("fundamental_synthesis"):
+            report_text += f"Fundamental Synthesis: {final_report.get('fundamental_synthesis')}\n"
+        if final_report.get("technical_synthesis"):
+            report_text += f"Technical Synthesis: {final_report.get('technical_synthesis')}\n"
+        if final_report.get("sentiment_synthesis"):
+            report_text += f"Sentiment Synthesis: {final_report.get('sentiment_synthesis')}\n"
+        if final_report.get("company_overview"):
+            report_text += f"Company Overview: {final_report.get('company_overview')}\n"
+        if final_report.get("investment_thesis"):
+            report_text += f"Investment Thesis: {', '.join(final_report.get('investment_thesis'))}\n"
+        if final_report.get("risk_analysis"):
+            report_text += f"Risks: {', '.join(final_report.get('risk_analysis'))}\n"
+            
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", CONVERSATIONAL_REWRITE_SYSTEM),
+            ("user", CONVERSATIONAL_REWRITE_USER)
+        ])
+        
+        chain = prompt | llm
+        response = chain.invoke({
+            "query": query,
+            "plan_json": json.dumps(plan, indent=2),
+            "strategy_json": json.dumps(strategy, indent=2),
+            "original_report_text": report_text
+        })
+        
+        conversational_text = response.content.strip()
+        if conversational_text:
+            return conversational_text
+    except Exception as e:
+        logger.error(f"Error in conversational rewrite: {e}. Falling back to original narrative.")
+        
+    return final_report.get("executive_summary", "")
+
+
+def _is_metric_allowed(metric_name: str, query: str, mode: str) -> bool:
+    if mode == "research_mode":
+        return True
+        
+    query_lower = query.lower()
+    metric_keys = {
+        "ROE": ["roe", "return on equity"],
+        "ROCE": ["roce", "return on capital employed"],
+        "PEG": ["peg", "price/earnings to growth", "price to growth"],
+        "MACD": ["macd", "moving average convergence divergence"],
+        "RSI": ["rsi", "relative strength index"],
+        "Moving averages": ["sma", "ema", "moving average", "moving averages"]
+    }
+    
+    for name, keywords in metric_keys.items():
+        if metric_name == name:
+            if any(kw in query_lower for kw in keywords):
+                return True
+                
+    if mode == "quick_summary":
+        return False
+        
+    if mode == "analytical_explanation":
+        if any(kw in query_lower for kw in ["why", "compare", "strength", "weakness"]):
+            return True
+        return False
+        
+    return True
 
 
 def build_response(
@@ -617,9 +987,45 @@ def build_response(
     complexity_level = intent_data.get("complexity_level", "LIGHT")
     classification_reasoning = intent_data.get("classification_reasoning", "")
     
-    # Determine UI blocks from the final intent policy. Upstream planner blocks can be
-    # broader than the response payload, so the response builder is authoritative here.
-    ui_blocks = UI_BLOCKS_BY_INTENT.get(primary_intent, UI_BLOCKS_BY_INTENT["GENERALIZED"])
+    # Determine UI blocks based on target response plan mode
+    plan = _plan_response(query, primary_intent, complexity_level)
+    
+    strategy = _select_response_strategy(query, primary_intent)
+    
+    if ui_blocks_override:
+        ui_blocks = ui_blocks_override
+    elif plan["mode"] == "quick_summary":
+        ui_blocks = ["ExecutiveSummary"]
+    elif strategy["strategy"] == "educational":
+        ui_blocks = ["EducationalExplainer", "Glossary"]
+    elif strategy["strategy"] == "sector_outlook":
+        ui_blocks = ["SectorTrends", "MacroDrivers", "IndustryNews", "Citations"]
+    elif primary_intent == "THEME_ANALYSIS":
+        ui_blocks = ["TechnologyTrends", "Adoption", "Research", "Citations"]
+    elif strategy["strategy"] == "company_comparison":
+        ui_blocks = ["ExecutiveSummary", "ComparisonTable", "Citations"]
+    elif plan["mode"] == "research_mode":
+        ui_blocks = [
+            "ExecutiveSummary",
+            "ConfidenceGauge",
+            "FundamentalCard",
+            "TechnicalCard",
+            "SentimentCard",
+            "ScenarioCards",
+            "RiskFactors",
+            "Citations"
+        ]
+    elif plan["mode"] == "analytical_explanation":
+        if primary_intent in ("TECHNICAL_ANALYSIS", "STOCK_MOVEMENT"):
+            ui_blocks = ["ExecutiveSummary", "TechnicalCard", "Citations"]
+        elif primary_intent in ("FUNDAMENTAL_ANALYSIS", "COMPARISON"):
+            ui_blocks = ["ExecutiveSummary", "FundamentalCard", "Citations"]
+        elif primary_intent in ("SENTIMENT_PULSE", "NEWS_ANALYSIS"):
+            ui_blocks = ["ExecutiveSummary", "SentimentCard", "Citations"]
+        else:
+            ui_blocks = ["ExecutiveSummary", "FundamentalCard", "TechnicalCard", "Citations"]
+    else:
+        ui_blocks = UI_BLOCKS_BY_INTENT.get(primary_intent, UI_BLOCKS_BY_INTENT["GENERALIZED"])
     
     # Build intent metadata
     intent_meta = IntentMeta(
@@ -649,7 +1055,7 @@ def build_response(
     summary = ""
     data_payload: Dict[str, Any] = {}
     confidence_metrics: Optional[ConfidenceMetrics] = None
-    citations = extract_citations_from_context(context)
+    citations = extract_citations_from_context(context, news_articles=news_articles)
     response_warnings = list(warnings or [])
     
     # Map key statistics and peers directly from grounding data (Phase 5)
@@ -718,7 +1124,7 @@ def build_response(
             "PEG Ratio": wrap_metric(
                 grounding_data.get("peg_ratio"),
                 f"{peg:.2f}x" if peg else "N/A"
-            ),
+            ) if _is_metric_allowed("PEG", query, plan["mode"]) else wrap_metric(None, "N/A"),
             "Price to Book": wrap_metric(
                 grounding_data.get("pb_ratio"),
                 f"{pb:.2f}x" if pb else "N/A"
@@ -734,11 +1140,11 @@ def build_response(
             "ROCE": wrap_metric(
                 grounding_data.get("roce"),
                 f"{roce * 100:.2f}%" if roce else "N/A"
-            ),
+            ) if _is_metric_allowed("ROCE", query, plan["mode"]) else wrap_metric(None, "N/A"),
             "ROE": wrap_metric(
                 grounding_data.get("roe"),
                 f"{roe * 100:.2f}%" if roe else "N/A"
-            ),
+            ) if _is_metric_allowed("ROE", query, plan["mode"]) else wrap_metric(None, "N/A"),
             "Debt/Equity Ratio": wrap_metric(
                 grounding_data.get("debt_to_equity"),
                 f"{de:.2f}x" if de else "N/A"
@@ -774,11 +1180,11 @@ def build_response(
 
     if "technicals" in allowed_sections:
         tech_indicators = {
-            "rsi_14": wrap_metric(grounding_data.get("rsi_14"), val_of("rsi_14")),
-            "sma_20": wrap_metric(grounding_data.get("sma_20"), val_of("sma_20")),
-            "sma_50": wrap_metric(grounding_data.get("sma_50"), val_of("sma_50")),
-            "macd": wrap_metric(grounding_data.get("macd"), val_of("macd")),
-            "macd_signal": wrap_metric(grounding_data.get("macd_signal"), val_of("macd_signal")),
+            "rsi_14": wrap_metric(grounding_data.get("rsi_14"), val_of("rsi_14")) if _is_metric_allowed("RSI", query, plan["mode"]) else wrap_metric(None, "N/A"),
+            "sma_20": wrap_metric(grounding_data.get("sma_20"), val_of("sma_20")) if _is_metric_allowed("Moving averages", query, plan["mode"]) else wrap_metric(None, "N/A"),
+            "sma_50": wrap_metric(grounding_data.get("sma_50"), val_of("sma_50")) if _is_metric_allowed("Moving averages", query, plan["mode"]) else wrap_metric(None, "N/A"),
+            "macd": wrap_metric(grounding_data.get("macd"), val_of("macd")) if _is_metric_allowed("MACD", query, plan["mode"]) else wrap_metric(None, "N/A"),
+            "macd_signal": wrap_metric(grounding_data.get("macd_signal"), val_of("macd_signal")) if _is_metric_allowed("MACD", query, plan["mode"]) else wrap_metric(None, "N/A"),
             "technical_trend": wrap_metric(grounding_data.get("technical_trend"), val_of("technical_trend")),
             "technical_momentum": wrap_metric(grounding_data.get("technical_momentum"), val_of("technical_momentum")),
         }
@@ -805,7 +1211,7 @@ def build_response(
             final_report["peer_comparison"] = peer_comparison
     
     if final_report:
-        narrative = final_report.get("executive_summary", "")
+        narrative = _rewrite_conversational(query, final_report, primary_intent, complexity_level)
         summary = narrative if "executive_summary" in allowed_blocks else ""
         educational_explanation = narrative if "educational_explanation" in allowed_blocks else ""
         news_summary = _first_text(final_report.get("sentiment_synthesis"), narrative) if "news_summary" in allowed_blocks else ""

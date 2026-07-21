@@ -37,6 +37,8 @@ from src.agents.retriever import extract_ticker
 from src.services.market_data import get_enhanced_market_context
 # from src.services.news_service import fetch_news_for_ticker
 from src.services.news_aggregator import NewsAggregator
+from src.services.source_ranker import SourceRanker
+from src.agents.retrieval_policy import get_policy, RetrievalPolicy
 from src.core.debug_logger import debug_logger
 
 logger = logging.getLogger(__name__)
@@ -305,6 +307,8 @@ def extract_news_source(item: str) -> str:
 # -----------------------------------------------------------------------
 # Intent → Data fetch strategy map
 # -----------------------------------------------------------------------
+TICKERLESS_INTENTS = {"EDUCATIONAL", "SECTOR_OUTLOOK", "THEME_ANALYSIS", "MARKET_OVERVIEW"}
+
 FETCH_STRATEGY = {
     # intent_key         : (fetch_market, fetch_financials, fetch_news)
     "STOCK_ANALYSIS":     (True,  True,  True),
@@ -322,11 +326,14 @@ FETCH_STRATEGY = {
 UI_BLOCKS_MAP = {
     "STOCK_ANALYSIS":      ["ExecutiveSummary", "ConfidenceGauge", "FundamentalCard", "TechnicalCard", "SentimentCard", "ScenarioCards", "RiskFactors", "Citations"],
     "STOCK_MOVEMENT":      ["MovementDrivers", "NewsTimeline", "SentimentPulse"],
-    "MARKET_OVERVIEW":     ["MarketSnapshot", "SectorHeatmap"],
+    "MARKET_OVERVIEW":     ["MarketTrends", "NewsHighlights"],
     "MACROECONOMIC":       ["MacroSummary", "PolicyImpact"],
     "SENTIMENT_PULSE":     ["SentimentPulse", "NewsTimeline"],
-    "EDUCATIONAL":         ["EducationalExplainer", "ConceptGlossary"],
+    "EDUCATIONAL":         ["EducationalExplainer", "Glossary"],
     "COMPARISON":          ["ComparisonTable", "FundamentalCard", "TechnicalCard"],
+    "COMPANY_COMPARISON":  ["ComparisonTable", "FundamentalCard", "SentimentPulse"],
+    "SECTOR_OUTLOOK":      ["SectorTrends", "MacroDrivers", "IndustryNews"],
+    "THEME_ANALYSIS":      ["TechnologyTrends", "Adoption", "Research"],
     "RESTRICTED_ADVISORY": ["SafeRefusal", "EducationalRedirect"],
     "GENERALIZED":         ["ExecutiveSummary", "ConfidenceGauge", "FundamentalCard", "TechnicalCard", "SentimentCard", "Citations"],
 }
@@ -338,6 +345,36 @@ def _now_utc() -> datetime:
 
 def _freshness_tag() -> str:
     return _now_utc().strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _news_search_term(query: str, primary_intent: str, ticker: Optional[str]) -> str:
+    if ticker and primary_intent not in TICKERLESS_INTENTS:
+        return ticker
+    return query.strip()
+
+
+def _debug_query_understanding(
+    *,
+    query: str,
+    primary_intent: str,
+    entity_type: str,
+    ticker: Optional[str],
+    policy: RetrievalPolicy,
+) -> None:
+    print(
+        f"\n================================================\n"
+        f"QUERY UNDERSTANDING\n"
+        f"================================================\n"
+        f"Query\n{query}\n"
+        f"Intent\n{primary_intent}\n"
+        f"Entity\n{entity_type}\n"
+        f"Ticker\n{ticker or 'None'}\n"
+        f"Routing\n{policy.pipeline}\n"
+        f"Retrieval Policy\n{policy.description}\n"
+        f"Modules Activated\n{', '.join(policy.modules) or 'None'}\n"
+        f"Modules Skipped\n{', '.join(policy.skipped_modules) or 'None'}\n"
+        f"================================================\n"
+    )
 
 
 async def dynamic_retriever_node(state: dict) -> dict:
@@ -359,26 +396,44 @@ async def dynamic_retriever_node(state: dict) -> dict:
     extracted_ticker = intent.get("extracted_ticker")
     query = state.get("query", "")
     planner_layout = intent.get("planner_layout", {})
-    required_data = planner_layout.get("required_data", {})
     required_ui_blocks = planner_layout.get("ui_blocks", [])
 
     # -----------------------------------------------------------------------
-    # Fast path: No live data needed
+    # Sprint 2: Look up centralized RetrievalPolicy for this intent
     # -----------------------------------------------------------------------
-    if primary_intent in ("EDUCATIONAL", "RESTRICTED_ADVISORY") or not any(required_data.values()):
-        logger.info(f"Intent={primary_intent}: skipping all live API calls.")
-        
+    policy: RetrievalPolicy = get_policy(primary_intent)
+
+    if primary_intent in TICKERLESS_INTENTS:
+        extracted_ticker = None
+
+    # -----------------------------------------------------------------------
+    # Fast path: No live data needed (RESTRICTED_ADVISORY or pure EDUCATIONAL)
+    # -----------------------------------------------------------------------
+    if not policy.fetch_market and not policy.fetch_financials and not policy.fetch_news:
+        logger.info(
+            f"Intent={primary_intent} | policy='{policy.description}' | "
+            "skipping all live API calls."
+        )
+
         debug_logger.log_retrieval_operation(
-            ticker="N/A",
+            ticker="None",
             intent=primary_intent,
             sources_retrieved=0,
             data_types=[],
             execution_ms=0,
         )
-        
+
+        _debug_query_understanding(
+            query=query,
+            primary_intent=primary_intent,
+            entity_type=primary_intent.replace("_", " ").title(),
+            ticker=None,
+            policy=policy,
+        )
+
         return {
             "context": [],
-            "ticker": state.get("ticker") or extracted_ticker or "",
+            "ticker": None,
             "data_freshness": _freshness_tag(),
             "ui_blocks": required_ui_blocks or UI_BLOCKS_MAP.get(primary_intent, ["EducationalExplainer"]),
             "grounding_data": None,
@@ -387,15 +442,26 @@ async def dynamic_retriever_node(state: dict) -> dict:
     # -----------------------------------------------------------------------
     # Resolve ticker
     # -----------------------------------------------------------------------
-    # Priority: explicitly provided > intent classifier extraction > query extraction
-    ticker = state.get("ticker") or extracted_ticker
-    if not ticker:
+    ticker = None if primary_intent in TICKERLESS_INTENTS else (state.get("ticker") or extracted_ticker)
+    if not ticker and policy.requires_ticker:
         ticker = extract_ticker(query)
-    ticker = ticker.upper().strip() if ticker else "NIFTY"
+    ticker = ticker.upper().strip() if ticker else None
+
+    if policy.requires_ticker and not ticker:
+        logger.info("Intent=%s requires a ticker, but none was resolved.", primary_intent)
+        return {
+            "context": [],
+            "ticker": None,
+            "news_articles": [],
+            "data_freshness": _freshness_tag(),
+            "ui_blocks": required_ui_blocks or UI_BLOCKS_MAP.get(primary_intent, UI_BLOCKS_MAP["GENERALIZED"]),
+            "grounding_data": {},
+            "prompt_context": "",
+        }
 
     # Pre-retrieval Validation Layer
     from src.services.entity_resolver import EntityResolver, EntityResolutionError, log_entity_validation
-    req_ticker, req_company = EntityResolver.resolve_sync(query)
+    req_ticker, req_company = EntityResolver.resolve_sync(query) if ticker else (None, None)
     if req_ticker and ticker != req_ticker:
         log_entity_validation(
             query=query,
@@ -423,12 +489,34 @@ async def dynamic_retriever_node(state: dict) -> dict:
             status="PASS"
         )
 
-    logger.info(f"Dynamic retriever: intent={primary_intent}, ticker={ticker}")
+    logger.info(
+        f"Dynamic retriever | intent={primary_intent} | ticker={ticker} | "
+        f"policy='{policy.description}'"
+    )
+    _debug_query_understanding(
+        query=query,
+        primary_intent=primary_intent,
+        entity_type="Company" if ticker else primary_intent.replace("_", " ").title(),
+        ticker=ticker,
+        policy=policy,
+    )
 
-    # Fetch strategies dynamically resolved from planner
-    fetch_market = required_data.get("market", True)
-    fetch_financials = required_data.get("financials", True)
-    fetch_news = required_data.get("news", True)
+    # Resolve entity list for multi-entity intents (COMPARISON, PEER_COMPARISON)
+    entity_collection_dict = intent.get("entity_collection")
+    all_tickers: list[str] = [ticker] if ticker else []
+    if policy.multi_entity and entity_collection_dict:
+        from src.services.entity_models import EntityCollection
+        ec = EntityCollection.from_dict(entity_collection_dict)
+        if ec.is_multi:
+            all_tickers = ec.all_tickers
+            logger.info(
+                f"Multi-entity mode | intents={primary_intent} | entities={all_tickers}"
+            )
+
+    # Fetch flags come from the policy (Sprint 2), not the planner required_data
+    fetch_market = policy.fetch_market
+    fetch_financials = policy.fetch_financials
+    fetch_news = policy.fetch_news
 
     context: list[str] = []
     data_types_fetched = []
@@ -436,11 +524,12 @@ async def dynamic_retriever_node(state: dict) -> dict:
     blocked_sources_list = []
 
     news_ctx = []
+    ranked_news = []
 
     # -----------------------------------------------------------------------
     # Fetch market/financial data
     # -----------------------------------------------------------------------
-    if fetch_market:
+    if fetch_market and ticker:
         try:
             market_ctx = await get_enhanced_market_context(ticker)
             context.extend(market_ctx)
@@ -459,10 +548,11 @@ async def dynamic_retriever_node(state: dict) -> dict:
     # -----------------------------------------------------------------------
     if fetch_news:
         try:
-            news_ctx = await NewsAggregator.fetch_all_news(ticker)
+            news_query = _news_search_term(query, primary_intent, ticker)
+            news_ctx = await NewsAggregator.fetch_all_news(news_query, ticker=ticker)
 
             # ===== STEP 1: SOURCE FILTERING =====
-            filtered_news, blocked = filter_news_results(news_ctx, ticker)
+            filtered_news, blocked = filter_news_results(news_ctx, ticker or "")
             blocked_sources_list.extend(blocked)
 
             if blocked:
@@ -512,43 +602,96 @@ async def dynamic_retriever_node(state: dict) -> dict:
 
             if not fresh_news and filtered_news:
                 logger.warning(
-                    f"All news for {ticker} is older than {MAX_NEWS_AGE_HOURS}h. Using most recent 3."
+                    f"All news for {ticker or news_query} is older than {MAX_NEWS_AGE_HOURS}h. Using most recent 3."
                 )
                 fresh_news = filtered_news[:3]
 
-            # ===== Convert articles into LLM context =====
-            formatted_news = []
+            # ===== STEP 3: SOURCE INTELLIGENCE RANKING (Sprint 3) =====
+            # Score each article: Source Trust (40%) + Financial Relevance (30%)
+            # + Freshness (20%) + Source Type Bonus (10%), then deduplicate.
+            ranked_news = SourceRanker.rank(
+                fresh_news,
+                deduplicate=True,
+                top_n=None,
+            )
 
-            for article in fresh_news:
-                formatted_news.append(
-                    f"[{str(article.get('publishedAt', ''))[:10]}] "
-                    f"{article.get('source', 'Unknown')} - "
-                    f"{article.get('title', 'No Title')}\n"
-                    f"{article.get('description', '')[:150]}"
-                )
+            # ===== STEP 4: Format ranked articles into LLM context strings =====
+            # Evidence metadata (trust tier, source type, score) is embedded
+            # in each context line so analysts can weight sources accordingly.
+            formatted_news = SourceRanker.format_ranked_context(
+                ranked_news,
+                max_description_chars=200,
+            )
 
             context.extend(formatted_news)
 
             data_types_fetched.append("news")
             total_sources += len(formatted_news)
 
+            if ranked_news:
+                scores = [a.get("evidence_score", 0) for a in ranked_news]
+                avg_evidence = round(sum(scores) / len(scores))
+                top_evidence = scores[0]
+            else:
+                avg_evidence = top_evidence = 0
+
             logger.info(
                 f"News retrieval: "
                 f"fetched={len(news_ctx)}, "
                 f"finance_relevant={len(filtered_news)}, "
                 f"fresh={len(fresh_news)}, "
+                f"after_dedup={len(ranked_news)}, "
+                f"top_evidence={top_evidence}, "
+                f"avg_evidence={avg_evidence}, "
                 f"blocked_sources={len(blocked)}"
             )
 
         except Exception as e:
-            logger.error(f"News fetch failed for {ticker}: {e}")
+            logger.error(f"News fetch failed for {ticker or query}: {e}")
             context.append(
-                f"[DATA UNAVAILABLE] News context for {ticker} could not be retrieved at this moment."
+                f"[DATA UNAVAILABLE] News context for {ticker or query} could not be retrieved at this moment."
             )
+
+    # -----------------------------------------------------------------------
+    # Sprint 2: Multi-entity news fetch (COMPARISON / PEER_COMPARISON)
+    # -----------------------------------------------------------------------
+    # For non-primary tickers, fetch news and merge into the shared context.
+    if policy.multi_entity and len(all_tickers) > 1 and fetch_news:
+        for extra_ticker in all_tickers[1:]:
+            try:
+                extra_news_raw = await NewsAggregator.fetch_all_news(extra_ticker)
+                extra_filtered, _ = filter_news_results(extra_news_raw, extra_ticker)
+                extra_ranked = SourceRanker.rank(
+                    extra_filtered,
+                    deduplicate=True,
+                    top_n=policy.news_max_docs,
+                )
+                extra_formatted = SourceRanker.format_ranked_context(
+                    extra_ranked, max_description_chars=200
+                )
+                context.extend(extra_formatted)
+                total_sources += len(extra_formatted)
+                ranked_news.extend(extra_ranked)
+                logger.info(
+                    f"Multi-entity news | ticker={extra_ticker} | "
+                    f"fetched={len(extra_news_raw)} | ranked={len(extra_ranked)}"
+                )
+            except Exception as e:
+                logger.warning(f"Multi-entity news fetch failed for {extra_ticker}: {e}")
+
+    # -----------------------------------------------------------------------
+    # Sprint 2: Context cap -- trim to policy.max_context_docs
+    # -----------------------------------------------------------------------
+    if policy.max_context_docs > 0 and len(context) > policy.max_context_docs:
+        logger.info(
+            f"Context cap applied | intent={primary_intent} | "
+            f"before={len(context)} | cap={policy.max_context_docs}"
+        )
+        context = context[: policy.max_context_docs]
 
     # ===== DEBUG LOGGING =====
     debug_logger.log_retrieval_operation(
-        ticker=ticker,
+        ticker=ticker or "None",
         intent=primary_intent,
         sources_retrieved=total_sources,
         data_types=data_types_fetched,
@@ -578,7 +721,7 @@ async def dynamic_retriever_node(state: dict) -> dict:
     return {
         "context": context,
         "ticker": ticker,
-        "news_articles": news_ctx,
+        "news_articles": ranked_news,
         "data_freshness": _freshness_tag(),
         "ui_blocks": required_ui_blocks or UI_BLOCKS_MAP.get(
             primary_intent,

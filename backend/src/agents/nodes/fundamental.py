@@ -61,8 +61,18 @@ CRITICAL RULES:
 6. User Understanding First:
    - The primary objective is to help the user understand the company or financial concept.
    - If a concept might confuse a beginner (e.g., ROCE, Debt-to-Equity, FCF Yield), explain it briefly in simple language before continuing.
+7. Citation Schema Rules:
+   - Every citation MUST contain a trust_tier.
+   - Allowed values are ONLY:
+       • Tier 1
+       • Tier 2
+       • Tier 3
+   - Never generate Tier 4, Tier 5, Premium, High, Medium, Low, Verified, Unknown, or any other value.
+   - If uncertain, use Tier 2.
 
 ---
+
+
 INTERNAL REASONING PIPELINE (Process Mentally Before Generating JSON Fields)
 ---------------------------------------------------------------------------
 Before writing the value for any JSON field, mentally execute these steps:
@@ -86,8 +96,7 @@ Example JSON output structure (ensure keys exactly match these):
     {{
       "source_name": "Source Name",
       "metric": "Metric Name",
-      "value": "Value String",
-      "trust_tier": "Tier 1"
+      "value": "Value String"
     }}
   ],
   "confidence": {{

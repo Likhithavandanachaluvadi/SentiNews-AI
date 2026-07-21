@@ -33,8 +33,36 @@ export interface SourceItem {
 
 const TEXT_FIELDS: Record<string, { title: string; keys: string[] }> = {
   EducationalExplainer: {
-    title: "Educational Explanation",
+    title: "Explanation",
     keys: ["educational_explanation", "summary"],
+  },
+  Glossary: {
+    title: "Glossary",
+    keys: ["glossary", "terms"],
+  },
+  SectorTrends: {
+    title: "Sector Trends",
+    keys: ["market_overview", "trends", "news_summary"],
+  },
+  MacroDrivers: {
+    title: "Macro Drivers",
+    keys: ["macro_drivers", "market_overview"],
+  },
+  IndustryNews: {
+    title: "Industry News",
+    keys: ["news_summary", "news_highlights"],
+  },
+  TechnologyTrends: {
+    title: "Technology Trends",
+    keys: ["market_overview", "trends", "news_summary"],
+  },
+  Adoption: {
+    title: "Adoption",
+    keys: ["adoption", "market_overview", "trends"],
+  },
+  Research: {
+    title: "Research",
+    keys: ["research", "news_summary", "news_highlights"],
   },
   NewsTimeline: {
     title: "Latest News",
@@ -180,6 +208,10 @@ function buildConversationalAnswer(result: ResearchResult): string {
   return "I found the research context, but I could not turn it into a clean response yet. Please try asking the same question with the company name or ticker.";
 }
 
+function normalizeForDuplicateCheck(text: string): string {
+  return text.replace(/\s+/g, " ").trim().toLowerCase();
+}
+
 const DynamicRenderer: React.FC<DynamicRendererProps> = ({ result }) => {
   if (!result) return null;
 
@@ -211,6 +243,7 @@ const DynamicRenderer: React.FC<DynamicRendererProps> = ({ result }) => {
 
           const text = getDataText(result, config.keys);
           if (!text.trim()) return null;
+          if (normalizeForDuplicateCheck(text) === normalizeForDuplicateCheck(chatAnswer)) return null;
 
           return (
             <section key={block} className="rounded-xl border border-white/10 bg-white/[0.025] p-5">

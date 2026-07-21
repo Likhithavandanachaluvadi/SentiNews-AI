@@ -33,7 +33,6 @@ Example JSON:
       "source_name": "Source",
       "metric": "Metric",
       "value": "Value",
-      "trust_tier": "Tier 1"
     }}
   ],
   "confidence": {{

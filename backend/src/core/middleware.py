@@ -237,7 +237,7 @@ def validate_query_multiple_companies(query: str, intent: str, entity_collection
     if intent in single_company_intents:
         if num_companies > 1:
             raise ValueError("Please proceed with only one stock or company at a time.")
-    elif intent == "COMPARISON":
+    elif intent in {"COMPARISON", "COMPANY_COMPARISON"}:
         max_allowed = 5 if entity_collection else 2
         if num_companies > max_allowed:
             raise ValueError(f"Please proceed with up to {max_allowed} stocks or companies at a time for comparison.")

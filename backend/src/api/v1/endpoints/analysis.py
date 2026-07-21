@@ -130,110 +130,109 @@ async def analyze_stock(
         # Get or create conversation context
         conversation = conversation_manager.get_or_create_conversation(req_data.conversation_id)
 
-        # Validate domain first using Financial Domain Guard (skip for follow-up queries in active conversations)
-        if not conversation.messages:
-            from src.core.domain_guard import FinancialDomainGuard
-            domain_result = FinancialDomainGuard.validate(query_val)
-            if not domain_result.allowed:
-                refusal_text = (
-                    "I'm SentiNews AI, a financial research assistant specialized in stock markets and financial analysis.\n\n"
-                    "I can help with:\n"
-                    "• Company Analysis\n"
-                    "• Stock Fundamentals\n"
-                    "• Technical Analysis\n"
-                    "• Market News\n"
-                    "• Financial Ratios\n"
-                    "• ETFs\n"
-                    "• Mutual Funds\n"
-                    "• IPOs\n"
-                    "• Economic Indicators\n\n"
-                    "Please ask a question related to financial markets."
-                )
-                
-                # Save messages to conversation manager memory
-                conversation_manager.save_message(
-                    conversation_id=conversation.conversation_id,
-                    role="user",
-                    content=req_data.query,
+        # Validate domain for every request using Financial Domain Guard (first message and follow-ups)
+        from src.core.domain_guard import FinancialDomainGuard
+        domain_result = FinancialDomainGuard.validate(query_val)
+        if not domain_result.allowed:
+            refusal_text = (
+                "I'm SentiNews AI, a financial research assistant specialized in stock markets and financial analysis.\n\n"
+                "I can help with:\n"
+                "• Company Analysis\n"
+                "• Stock Fundamentals\n"
+                "• Technical Analysis\n"
+                "• Market News\n"
+                "• Financial Ratios\n"
+                "• ETFs\n"
+                "• Mutual Funds\n"
+                "• IPOs\n"
+                "• Economic Indicators\n\n"
+                "Please ask a question related to financial markets."
+            )
+            
+            # Save messages to conversation manager memory
+            conversation_manager.save_message(
+                conversation_id=conversation.conversation_id,
+                role="user",
+                content=req_data.query,
+                ticker="N/A",
+            )
+            conversation_manager.save_message(
+                conversation_id=conversation.conversation_id,
+                role="assistant",
+                content=refusal_text,
+                ticker="N/A",
+                intent="GENERALIZED",
+                last_summary=refusal_text,
+            )
+            
+            from src.agents.schemas import UnifiedResponseEnvelope, IntentMeta, ResponseMeta
+            import uuid
+            
+            skipped_section = {
+                "status": "skipped",
+                "data": {},
+                "synthesis": "",
+                "confidence": 0,
+                "warnings": ["Analysis skipped for this query type."],
+                "data_freshness": datetime.utcnow().isoformat(),
+                "source_quality": "Unavailable",
+                "retrieval_status": "missing"
+            }
+            
+            envelope = UnifiedResponseEnvelope(
+                intent=IntentMeta(
+                    primary_intent="GENERALIZED",
+                    secondary_intent=None,
+                    intent_confidence=1.0,
+                    query_risk_level="LOW",
+                    query_risk_score=0.0,
+                    complexity_level="LIGHT",
+                    classification_reasoning="Out of domain query detected by Financial Domain Guard."
+                ),
+                meta=ResponseMeta(
+                    report_id=str(uuid.uuid4()),
                     ticker="N/A",
-                )
-                conversation_manager.save_message(
+                    data_freshness=datetime.utcnow().isoformat(),
+                    generation_time_ms=0,
+                    created_at=datetime.utcnow().isoformat(),
                     conversation_id=conversation.conversation_id,
-                    role="assistant",
-                    content=refusal_text,
-                    ticker="N/A",
-                    intent="GENERALIZED",
-                    last_summary=refusal_text,
-                )
-                
-                from src.agents.schemas import UnifiedResponseEnvelope, IntentMeta, ResponseMeta
-                import uuid
-                
-                skipped_section = {
-                    "status": "skipped",
-                    "data": {},
-                    "synthesis": "",
-                    "confidence": 0,
-                    "warnings": ["Analysis skipped for this query type."],
-                    "data_freshness": datetime.utcnow().isoformat(),
-                    "source_quality": "Unavailable",
-                    "retrieval_status": "missing"
+                ),
+                summary=refusal_text,
+                data={
+                    "schema_version": "DQI-1.0",
+                    "executive_summary": refusal_text,
+                    "outlook": "Neutral Outlook",
+                    "conviction": "Low Confidence Scenario"
+                },
+                sections={
+                    "fundamentals": skipped_section,
+                    "technicals": skipped_section,
+                    "sentiment": skipped_section,
+                    "valuation": skipped_section
+                },
+                confidence=None,
+                warnings=["Analysis skipped for this query type."],
+                citations=[],
+                sources=[],
+                ui_blocks=["ExecutiveSummary"],
+                debug={
+                    "schema_version": "DQI-1.0",
+                    "execution_logs": [],
+                    "retrieval_sources": [],
+                    "section_status": {
+                        "fundamentals": "skipped",
+                        "technicals": "skipped",
+                        "sentiment": "skipped",
+                        "valuation": "skipped"
+                    },
                 }
-                
-                envelope = UnifiedResponseEnvelope(
-                    intent=IntentMeta(
-                        primary_intent="GENERALIZED",
-                        secondary_intent=None,
-                        intent_confidence=1.0,
-                        query_risk_level="LOW",
-                        query_risk_score=0.0,
-                        complexity_level="LIGHT",
-                        classification_reasoning="Out of domain query detected by Financial Domain Guard."
-                    ),
-                    meta=ResponseMeta(
-                        report_id=str(uuid.uuid4()),
-                        ticker="N/A",
-                        data_freshness=datetime.utcnow().isoformat(),
-                        generation_time_ms=0,
-                        created_at=datetime.utcnow().isoformat(),
-                        conversation_id=conversation.conversation_id,
-                    ),
-                    summary=refusal_text,
-                    data={
-                        "schema_version": "DQI-1.0",
-                        "executive_summary": refusal_text,
-                        "outlook": "Neutral Outlook",
-                        "conviction": "Low Confidence Scenario"
-                    },
-                    sections={
-                        "fundamentals": skipped_section,
-                        "technicals": skipped_section,
-                        "sentiment": skipped_section,
-                        "valuation": skipped_section
-                    },
-                    confidence=None,
-                    warnings=["Analysis skipped for this query type."],
-                    citations=[],
-                    sources=[],
-                    ui_blocks=["ExecutiveSummary"],
-                    debug={
-                        "schema_version": "DQI-1.0",
-                        "execution_logs": [],
-                        "retrieval_sources": [],
-                        "section_status": {
-                            "fundamentals": "skipped",
-                            "technicals": "skipped",
-                            "sentiment": "skipped",
-                            "valuation": "skipped"
-                        },
-                    }
-                )
-                return envelope.model_dump()
+            )
+            return envelope.model_dump()
 
         # Invoke structured router/classifier
         resolved = await conversation_manager.resolve_query_intent(conversation.conversation_id, query_val)
         
-        ticker = resolved.resolved_ticker or conversation.ticker or "NIFTY"
+        ticker = resolved.resolved_ticker or conversation.ticker
         query = resolved.resolved_query
             
         user_email = current_user.email if current_user else "guest"
@@ -314,11 +313,12 @@ async def analyze_stock(
                         url="",
                         published_at=datetime.utcnow().isoformat()[:10],
                     ))
-            elif "overview" in ctx_str.lower() or "financial snapshot" in ctx_str.lower():
+            elif ticker and ("overview" in ctx_str.lower() or "financial snapshot" in ctx_str.lower()):
+                ticker_symbol = (ticker or "").upper()
                 citations.append(Citation(
-                    title=f"yfinance Live Financial Database Node ({ticker.upper()})",
+                    title=f"yfinance Live Financial Database Node ({ticker_symbol})",
                     source="yfinance",
-                    url=f"https://finance.yahoo.com/quote/{ticker.upper()}.NS",
+                    url=f"https://finance.yahoo.com/quote/{ticker_symbol}.NS",
                     published_at=datetime.utcnow().isoformat()[:10],
                 ))
         

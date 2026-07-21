@@ -11,9 +11,15 @@ class EvidenceCitation(BaseModel):
     source_name: str = Field(description="Name of the source (e.g., 'yFinance', 'Screener.in', 'Reuters')")
     metric: str = Field(description="The exact metric or fact cited")
     value: str = Field(description="The value of the metric")
-    trust_tier: Literal["Tier 1", "Tier 2", "Tier 3"] = Field(
+    trust_tier: Optional[Literal["Tier 1", "Tier 2", "Tier 3"]] = Field(
+        default=None,
         description="Tier 1: Primary data (NSE, RBI, SEC). Tier 2: Reputable media (Reuters). Tier 3: Opinion/Blogs"
     )
+    trust_score: Optional[int] = Field(default=None, description="Source trust score from SourceRanker")
+    source_tier_label: Optional[str] = Field(default=None, description="Source tier label from SourceRanker")
+    evidence_score: Optional[int] = Field(default=None, description="Evidence score from SourceRanker")
+    source_type: Optional[str] = Field(default=None, description="Source type from SourceRanker")
+
 
 class ConfidenceMetrics(BaseModel):
     """Standardized confidence scoring for all agents."""
