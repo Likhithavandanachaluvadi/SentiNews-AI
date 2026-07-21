@@ -35,6 +35,112 @@ class EntityResolutionPipeline:
     # Process-level LRU cache for Yahoo Finance searches
     _yahoo_lru_cache = {}
 
+    PROTECTED_CONCEPTS = {
+        "AI": "technology_concept",
+        "Artificial Intelligence": "technology_concept",
+        "ML": "technology_concept",
+        "LLM": "technology_concept",
+        "GenAI": "technology_concept",
+
+        "ROE": "financial_metric",
+        "ROCE": "financial_metric",
+        "EPS": "financial_metric",
+        "P/E": "financial_metric",
+        "PEG": "financial_metric",
+
+        "RSI": "technical_indicator",
+        "MACD": "technical_indicator",
+        "Bollinger": "technical_indicator",
+
+        "GDP": "economic_indicator",
+        "CPI": "economic_indicator",
+        "Inflation": "economic_indicator",
+        "Repo Rate": "economic_indicator",
+
+        "Banking": "sector",
+        "IT": "sector",
+        "Technology": "sector",
+        "Pharma": "sector",
+        "Energy": "sector",
+        "Auto": "sector",
+        "FMCG": "sector",
+
+        "Cloud": "industry_theme",
+        "Cybersecurity": "industry_theme",
+        "Semiconductor": "industry_theme",
+        "EV": "industry_theme"
+    }
+
+    @classmethod
+    def _classify_candidate(cls, candidate: str, query: str) -> str:
+        cand_upper = candidate.upper().strip()
+        cand_lower = candidate.lower().strip()
+        query_lower = query.lower()
+
+        # Step 5: Sector Handling
+        sector_keywords = ["banking", "it", "pharma", "energy", "auto", "technology", "renewable energy"]
+        sector_indicators = ["sector", "industry", "companies"]
+        
+        for sect in sector_keywords:
+            for ind in sector_indicators:
+                phrase = f"{sect} {ind}"
+                if phrase in cand_lower:
+                    return "sector"
+                if cand_lower == sect:
+                    pattern = rf"\b{re.escape(cand_lower)}\s+{re.escape(ind)}\b"
+                    if re.search(pattern, query_lower):
+                        return "sector"
+                    pattern_pre = rf"\b{re.escape(ind)}\s+of\s+{re.escape(cand_lower)}\b"
+                    if re.search(pattern_pre, query_lower):
+                        return "sector"
+
+        # Protected Concepts Registry Lookup
+        for concept, concept_type in cls.PROTECTED_CONCEPTS.items():
+            if cand_upper == concept.upper() or cand_lower == concept.lower():
+                # Step 6: Ambiguous Token Handling (AI / IT)
+                if cand_upper == "AI":
+                    positive_company_signals = ["stock", "share", "listed", "earnings", "market cap", "valuation", "fundamentals", "ticker"]
+                    if any(sig in query_lower for sig in positive_company_signals):
+                        return "company"
+                    return "technology_concept"
+                if cand_upper == "IT":
+                    for ind in ["sector", "industry", "companies"]:
+                        if f"it {ind}" in query_lower:
+                            return "sector"
+                    return "sector"
+                return concept_type
+
+        # Suffix / local database matching
+        company_suffixes = ["ltd", "limited", "inc", "corp", "corporation", "co", "pvt", "private"]
+        if any(rf"\b{re.escape(suff)}\b" in cand_lower for suff in company_suffixes):
+            return "company"
+
+        if re.match(r"^[A-Z0-9&\-._]{1,10}$", candidate) and cand_lower not in NON_ENTITY_CANDIDATES:
+            from src.services.entity_resolver import EntityResolver
+            EntityResolver.initialize_sync()
+            if candidate in EntityResolver._ticker_to_company:
+                return "ticker"
+
+        from src.services.entity_resolver import EntityResolver
+        EntityResolver.initialize_sync()
+        if cand_lower in EntityResolver._company_to_ticker:
+            return "company"
+
+        return "company"
+
+    @classmethod
+    def _validate_context(cls, candidate: str, query: str) -> bool:
+        query_lower = query.lower()
+        positive_company_signals = ["stock", "share", "company", "listed", "ticker", "valuation", "earnings", "market cap", "fundamentals"]
+        negative_company_signals = ["industry", "sector", "explain", "meaning", "concept", "technology", "adoption", "trend", "outlook", "beginner"]
+        
+        has_negative = any(sig in query_lower for sig in negative_company_signals)
+        has_positive = any(sig in query_lower for sig in positive_company_signals)
+        
+        if has_negative and not has_positive:
+            return False
+        return True
+
     @classmethod
     def resolve_entities_sync(cls, query: str, intent: Optional[str] = None) -> EntityCollection:
         """Synchronous multi-entity resolver pipeline."""
@@ -47,6 +153,42 @@ class EntityResolutionPipeline:
 
         resolved_list = []
         for cand in candidates:
+            # Step 1: Candidate Classification
+            ent_type = cls._classify_candidate(cand, query)
+            
+            # Step 7: Improved debug logging
+            context_val = "educational" if "explain" in query.lower() or "what is" in query.lower() else "analytical"
+            
+            # Step 4: Resolution Rules
+            if ent_type not in ("company", "ticker"):
+                logger.info(
+                    f"\nCandidate: {cand}\n"
+                    f"Classification: {ent_type}\n"
+                    f"Context: {context_val}\n"
+                    f"Resolution Decision: Skip ticker lookup\n"
+                    f"Reason: Protected concept or non-company entity.\n"
+                )
+                continue
+                
+            # Step 3: Context Validation
+            if not cls._validate_context(cand, query):
+                logger.info(
+                    f"\nCandidate: {cand}\n"
+                    f"Classification: {ent_type}\n"
+                    f"Context: {context_val}\n"
+                    f"Resolution Decision: Skip ticker lookup\n"
+                    f"Reason: Context validation blocked company resolution due to negative context/signals.\n"
+                )
+                continue
+                
+            logger.info(
+                f"\nCandidate: {cand}\n"
+                f"Classification: {ent_type}\n"
+                f"Context: {context_val}\n"
+                f"Resolution Decision: Proceed with ticker lookup\n"
+                f"Reason: Candidate classified as company/ticker with valid stock context.\n"
+            )
+
             # Stage 2: Per-Candidate Multi-Source Matching
             matched = cls._match_candidate(cand)
             if matched:
@@ -94,6 +236,42 @@ class EntityResolutionPipeline:
         # We resolve matches sequentially or concurrently for Stage 2/4
         # Since Stage 5 is async, we separate candidate resolution
         for cand in candidates:
+            # Step 1: Candidate Classification
+            ent_type = cls._classify_candidate(cand, query)
+            
+            # Step 7: Improved debug logging
+            context_val = "educational" if "explain" in query.lower() or "what is" in query.lower() else "analytical"
+            
+            # Step 4: Resolution Rules
+            if ent_type not in ("company", "ticker"):
+                logger.info(
+                    f"\nCandidate: {cand}\n"
+                    f"Classification: {ent_type}\n"
+                    f"Context: {context_val}\n"
+                    f"Resolution Decision: Skip ticker lookup\n"
+                    f"Reason: Protected concept or non-company entity.\n"
+                )
+                continue
+                
+            # Step 3: Context Validation
+            if not cls._validate_context(cand, query):
+                logger.info(
+                    f"\nCandidate: {cand}\n"
+                    f"Classification: {ent_type}\n"
+                    f"Context: {context_val}\n"
+                    f"Resolution Decision: Skip ticker lookup\n"
+                    f"Reason: Context validation blocked company resolution due to negative context/signals.\n"
+                )
+                continue
+                
+            logger.info(
+                f"\nCandidate: {cand}\n"
+                f"Classification: {ent_type}\n"
+                f"Context: {context_val}\n"
+                f"Resolution Decision: Proceed with ticker lookup\n"
+                f"Reason: Candidate classified as company/ticker with valid stock context.\n"
+            )
+
             matched = cls._match_candidate(cand)
             if matched:
                 resolved_list.append(matched)
@@ -255,21 +433,6 @@ class EntityResolutionPipeline:
                 query_span=candidate
             )
 
-        # Step 2.2: Exact Company Name Lookup
-        if candidate_lower in EntityResolver._company_to_ticker:
-            sym = EntityResolver._company_to_ticker[candidate_lower]
-            company_name = EntityResolver._ticker_to_company[sym]
-            return ResolvedEntity(
-                ticker=sym,
-                company_name=company_name,
-                exchange="NASDAQ" if sym in ["GOOGL", "TSLA", "AAPL", "NVDA"] else "NSE",
-                country="US" if sym in ["GOOGL", "TSLA", "AAPL", "NVDA"] else "IN",
-                confidence=0.97,
-                resolution_source="EXACT_NAME",
-                aliases=cls._build_aliases(sym),
-                query_span=candidate
-            )
-
         # Step 2.3: Legacy Alias Lookup
         if candidate_lower in LEGACY_EDGE_CASES:
             sym = LEGACY_EDGE_CASES[candidate_lower]
@@ -286,6 +449,21 @@ class EntityResolutionPipeline:
                 country="US" if sym == "GOOGL" else "IN",
                 confidence=0.95,
                 resolution_source="LEGACY_ALIAS",
+                aliases=cls._build_aliases(sym),
+                query_span=candidate
+            )
+
+        # Step 2.2: Exact Company Name Lookup
+        if candidate_lower in EntityResolver._company_to_ticker:
+            sym = EntityResolver._company_to_ticker[candidate_lower]
+            company_name = EntityResolver._ticker_to_company[sym]
+            return ResolvedEntity(
+                ticker=sym,
+                company_name=company_name,
+                exchange="NASDAQ" if sym in ["GOOGL", "TSLA", "AAPL", "NVDA"] else "NSE",
+                country="US" if sym in ["GOOGL", "TSLA", "AAPL", "NVDA"] else "IN",
+                confidence=0.97,
+                resolution_source="EXACT_NAME",
                 aliases=cls._build_aliases(sym),
                 query_span=candidate
             )

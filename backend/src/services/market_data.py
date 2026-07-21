@@ -1005,6 +1005,13 @@ def resolve_metric_consensus(
     logger.info(log_str)
 
     timestamp = datetime.utcnow().isoformat()
+    display_value = registry["formatter"](selected_val)
+
+    normalized_value = (
+        float(selected_val)
+        if isinstance(selected_val, (int, float))
+        else None
+    )
     return {
         "value": selected_val,
         "source": selected_provider,
@@ -1012,7 +1019,7 @@ def resolve_metric_consensus(
         "confidence": confidence,
         "source_url": None,
         "raw_value": raw_values.get(selected_provider),
-        "normalized_value": selected_val,
+        "normalized_value": normalized_value,
         "display_value": display_value,
         "validation_status": validation_status,
         "other_provider_values": other_provider_values,
