@@ -23,6 +23,15 @@ LEGACY_EDGE_CASES = {
     "tesla": "TSLA",
     "tsla": "TSLA",
     "sbi": "SBIN",
+    "apple": "AAPL",
+    "aapl": "AAPL",
+    "nvda": "NVDA",
+    "nvidia": "NVDA",
+    "msft": "MSFT",
+    "microsoft": "MSFT",
+    "amzn": "AMZN",
+    "amazon": "AMZN",
+    "meta": "META",
 }
 
 def log_entity_validation(query: str, req_company: str, req_ticker: str, res_company: str, res_ticker: str, ret_company: str, ret_ticker: str, status: str, reason: str = "", provider: str = "EntityResolver"):
@@ -52,8 +61,9 @@ def log_entity_validation(query: str, req_company: str, req_ticker: str, res_com
 def clean_company_name(name: str) -> str:
     """Clean corporate suffixes from company names for robust matching."""
     name_lower = name.lower().strip()
+    name_lower = re.sub(r'\bpharmaceuticals?\b', 'pharma', name_lower, flags=re.IGNORECASE)
     cleaned = re.sub(
-        r'\b(corp|corporation|limited|ltd|inc|incorporated|plc|co|company|private|pvt)\b\.?',
+        r'\b(corp|corporation|limited|ltd|inc|incorporated|plc|co|company|private|pvt|industries|industry)\b\.?',
         '', name_lower, flags=re.IGNORECASE
     )
     return re.sub(r'[\s,.\-]+$', '', cleaned).strip()
@@ -71,13 +81,18 @@ class EntityResolver:
             return
         
         # Load legacy edge cases
+        names_map = {
+            "GOOGL": "Alphabet Inc.",
+            "TSLA": "Tesla, Inc.",
+            "SBIN": "State Bank of India",
+            "AAPL": "Apple Inc.",
+            "NVDA": "NVIDIA Corporation",
+            "MSFT": "Microsoft Corporation",
+            "AMZN": "Amazon.com, Inc.",
+            "META": "Meta Platforms, Inc."
+        }
         for name, sym in LEGACY_EDGE_CASES.items():
-            if sym == "GOOGL":
-                company_name = "Alphabet Inc."
-            elif sym == "TSLA":
-                company_name = "Tesla, Inc."
-            else:
-                company_name = "State Bank of India"
+            company_name = names_map.get(sym, sym)
             cls._ticker_to_company[sym] = company_name
             cls._company_to_ticker[name] = sym
 
@@ -159,18 +174,21 @@ class EntityResolver:
 
     @classmethod
     def _extract_candidate_search_term(cls, query: str) -> Optional[str]:
+        from src.services.entity_resolution_pipeline import (
+            STOP_WORDS_GENERIC, ACTION_VERBS, COUNTRY_DEMONYMS
+        )
         cleaned = query.strip()
         cleaned = re.sub(
-            r'^(is|should i buy|should i invest in|what is|outlook for|evaluate|analyze|tell me about|how is|price of)\b',
+            r'^(is|should i buy|should i invest in|what is|outlook for|evaluate|analyze|analyse|rank|identify|compare|tell me about|how is|price of)\b',
             '', cleaned, flags=re.IGNORECASE
         ).strip()
         cleaned = re.sub(
-            r'\b(stock|share|shares|investment|financials|fundamentals|technical|news|analysis|report|a good buy|overvalued|undervalued|today)\b',
+            r'\b(stock|share|shares|investment|financials|fundamentals|technical|news|analysis|report|a good buy|overvalued|undervalued|today|supporting|evidence|government|months?|years?)\b',
             '', cleaned, flags=re.IGNORECASE
         ).strip()
         
         cleaned = re.sub(r'[^\w\s&.\-]', '', cleaned).strip()
-        words = cleaned.split()
+        words = [w for w in cleaned.split() if w.lower() not in STOP_WORDS_GENERIC and w.lower() not in ACTION_VERBS and w.lower() not in COUNTRY_DEMONYMS and not w.isdigit()]
         if len(words) > 0:
             return " ".join(words[:4])
         return None

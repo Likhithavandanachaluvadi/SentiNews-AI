@@ -23,6 +23,168 @@ class PromptContextBuilder:
             retrieval_context = []
 
         # =================================================
+        # DETECTION of THEME_ANALYSIS Execution State
+        # =================================================
+        is_theme = (grounding_data.get("ticker") is None and "discovered_companies" in grounding_data)
+
+        if is_theme:
+            # 1. Theme Overview: detected theme, market context, latest theme news summary
+            detected_theme = query.strip()
+            
+            market_context_lines = []
+            for c in retrieval_context:
+                c_str = str(c).strip()
+                if "financial snapshot" in c_str.lower() or "screener" in c_str.lower():
+                    market_context_lines.append(c_str)
+            market_context_str = "\n".join(market_context_lines) if market_context_lines else "No specific index context available."
+
+            # Parse discovered beneficiary details from retrieval_context fallback
+            import re
+            parsed_companies = {}
+            for c in retrieval_context:
+                c_str = str(c).strip()
+                match = re.search(r"^-\s*(.*?)\s*\((.*?)\):\s*Industry=(.*?), Sector=(.*?), Market Cap=(.*)$", c_str)
+                if match:
+                    c_name, c_ticker, c_industry, c_sector, c_mcap = match.groups()
+                    parsed_companies[c_ticker.upper().strip()] = {
+                        "name": c_name.strip(),
+                        "ticker": c_ticker.strip(),
+                        "industry": c_industry.strip(),
+                        "sector": c_sector.strip(),
+                        "market_cap": c_mcap.strip()
+                    }
+
+            # Build list of companies from grounding_data["peers"] (structured source)
+            discovered_list = []
+            peers = grounding_data.get("peers") or []
+            for p in peers:
+                if isinstance(p, dict):
+                    ticker = str(p.get("ticker") or "").upper().strip()
+                    name = p.get("name") or "N/A"
+                    mcap = p.get("market_cap") or "N/A"
+                else:
+                    ticker = str(getattr(p, "ticker", "") or "").upper().strip()
+                    name = getattr(p, "name", "N/A")
+                    mcap = getattr(p, "market_cap", "N/A")
+
+                if not ticker:
+                    continue
+
+                parsed = parsed_companies.get(ticker)
+                if parsed:
+                    ind = parsed["industry"]
+                    sec = parsed["sector"]
+                    name = name if name != "N/A" else parsed["name"]
+                    mcap = mcap if mcap != "N/A" else parsed["market_cap"]
+                else:
+                    ind = "N/A"
+                    sec = "N/A"
+
+                # Generate theme context for each company dynamically based on news
+                company_news = []
+                for art in news_articles or []:
+                    title = str(art.get("title") or "").lower()
+                    desc = str(art.get("description") or "").lower()
+                    if ticker.lower() in title or ticker.lower() in desc or name.lower() in title or name.lower() in desc:
+                        company_news.append(art.get("title"))
+                
+                theme_context_val = f"Relevant beneficiary within the {ind} industry."
+                if company_news:
+                    theme_context_val += f" Recent headlines: {'; '.join(company_news[:2])}."
+
+                discovered_list.append({
+                    "name": name,
+                    "ticker": ticker,
+                    "industry": ind,
+                    "sector": sec,
+                    "market_cap": mcap,
+                    "theme_context": theme_context_val
+                })
+
+            # Fallback to parsed if structured is completely missing
+            if not discovered_list:
+                for parsed in parsed_companies.values():
+                    ticker = parsed["ticker"]
+                    name = parsed["name"]
+                    ind = parsed["industry"]
+                    # Generate theme context for fallback
+                    company_news = []
+                    for art in news_articles or []:
+                        title = str(art.get("title") or "").lower()
+                        desc = str(art.get("description") or "").lower()
+                        if ticker.lower() in title or ticker.lower() in desc or name.lower() in title or name.lower() in desc:
+                            company_news.append(art.get("title"))
+                    theme_context_val = f"Relevant beneficiary within the {ind} industry."
+                    if company_news:
+                        theme_context_val += f" Recent headlines: {'; '.join(company_news[:2])}."
+
+                    discovered_list.append({
+                        "name": name,
+                        "ticker": ticker,
+                        "industry": ind,
+                        "sector": parsed["sector"],
+                        "market_cap": parsed["market_cap"],
+                        "theme_context": theme_context_val
+                    })
+
+            # Format Top Beneficiary Companies context output
+            beneficiaries_str_list = []
+            for p in discovered_list:
+                comp_lines = [
+                    f"- Company Name: {p['name']}",
+                    f"  Ticker: {p['ticker']}",
+                    f"  Industry: {p['industry']}",
+                    f"  Sector: {p['sector']}",
+                    f"  Market Cap: {p['market_cap']}",
+                    f"  Theme Context: {p['theme_context']}"
+                ]
+                beneficiaries_str_list.append("\n".join(comp_lines))
+            beneficiaries_str = "\n\n".join(beneficiaries_str_list) if beneficiaries_str_list else "No discovered beneficiary companies available."
+
+            # News articles context
+            news_lines = []
+            for c in retrieval_context:
+                c_str = str(c).strip()
+                if re.search(r"^-\s*(.*?)\s*\((.*?)\):\s*Industry=(.*?), Sector=(.*?), Market Cap=(.*)$", c_str):
+                    continue
+                if c_str.startswith("TOP DISCOVERED THEME BENEFICIARIES"):
+                    continue
+                if c_str.startswith("[") and " - " in c_str:
+                    news_lines.append(c_str)
+            news_str = "\n\n".join(news_lines) if news_lines else "No recent theme news available."
+
+            # Available grounding data summary
+            grounding_keys = [k for k, v in grounding_data.items() if v and k != "peers"]
+            grounding_summary = f"Sector/Theme descriptor: {grounding_data.get('sector', 'N/A')}. Discovered tickers: {', '.join(grounding_data.get('discovered_companies', []))}."
+
+            output = (
+                "=================================================\n"
+                "THEME OVERVIEW\n"
+                "=================================================\n"
+                f"Detected Theme: {detected_theme}\n"
+                f"Market Context: {market_context_str}\n"
+                f"Latest Theme News: {news_str[:300]}...\n\n"
+                "=================================================\n"
+                "TOP BENEFICIARY COMPANIES\n"
+                "=================================================\n"
+                f"{beneficiaries_str}\n\n"
+                "=================================================\n"
+                "THEME CONTEXT\n"
+                "=================================================\n"
+                f"Latest News details:\n{news_str}\n\n"
+                f"Discovered Beneficiary Tickers: {', '.join([p['ticker'] for p in discovered_list])}\n\n"
+                f"Available Grounding Data Summary: {grounding_summary}\n\n"
+                "=================================================\n"
+                "STRICT INSTRUCTIONS\n"
+                "=================================================\n"
+                "Never invent facts.\n"
+                "Never estimate missing values.\n"
+                "Focus on technology trends, adoption, research context, and market drivers.\n"
+                "Do not invent company-specific financials if they are not in the context.\n"
+            )
+            return output
+
+        # =================================================
         # 1. COMPANY OVERVIEW
         # =================================================
         company = grounding_data.get("company_name", "Data unavailable.")

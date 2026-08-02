@@ -1,6 +1,8 @@
 "use client";
 
 import { FormEvent, KeyboardEvent, useEffect, useRef, useState } from "react";
+import Image from "next/image";
+import { ArrowUp, BadgeCheck, Bot, Hourglass, Link, LoaderCircle } from "lucide-react";
 import ResearchChat, { Message } from "../components/chat/ResearchChat";
 import { SourceItem } from "../components/chat/DynamicRenderer";
 
@@ -83,7 +85,7 @@ export default function Home() {
     setMessages((current) => [...current, { role: "user", content: nextQuery }]);
 
     try {
-      const response = await fetch("http://localhost:8000/api/v1/research/analyze", {
+      const response = await fetch("http://localhost:8001/api/v1/research/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -163,16 +165,19 @@ export default function Home() {
             .sentinews-chatbot table { font-size: 1.08rem !important; }
             .sentinews-chatbot th,
             .sentinews-chatbot td { padding: 0.9rem 1rem !important; }
-            .sentinews-chatbot .material-symbols-outlined { font-size: 1.45em; }
           `,
         }}
       />
       <div className="flex h-full min-h-0 flex-col lg:flex-row">
         <aside className="border-b border-white/10 bg-[#141821] px-7 py-7 lg:w-[390px] lg:border-b-0 lg:border-r xl:w-[430px]">
           <div className="flex items-center gap-4">
-            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-600 text-white shadow-lg shadow-blue-950/40">
-              <span className="material-symbols-outlined text-3xl symbol-filled">auto_awesome</span>
-            </div>
+            <Image
+              src="/sentinews-logo.jpg"
+              alt="SentiNews AI"
+              width={56}
+              height={56}
+              className="h-14 w-14 rounded-2xl object-cover shadow-lg shadow-blue-950/40"
+            />
             <div>
               <h1 className="text-2xl font-semibold text-white">SentiNews AI</h1>
               <p className="text-sm text-zinc-400">Financial research chatbot</p>
@@ -246,7 +251,7 @@ export default function Home() {
                     className="group rounded-xl border border-white/10 bg-white/[0.03] px-4 py-4 text-zinc-300 transition hover:border-blue-400/60 hover:bg-blue-500/10 hover:text-white"
                   >
                     <span className="mb-2 flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-blue-300">
-                      <span className="material-symbols-outlined text-[18px]">link</span>
+                      <Link className="h-4 w-4" aria-hidden="true" />
                       Source {index + 1}
                     </span>
                     <span className="block text-base font-medium leading-6 group-hover:underline">
@@ -276,9 +281,7 @@ export default function Home() {
                 </p>
               </div>
               <div className="hidden items-center gap-2 rounded-full border border-white/10 px-5 py-2.5 text-base text-zinc-400 sm:flex">
-                <span className="material-symbols-outlined text-[18px] text-blue-300">
-                  verified
-                </span>
+                <BadgeCheck className="h-5 w-5 text-blue-300" aria-hidden="true" />
                 Educational research only
               </div>
             </div>
@@ -290,9 +293,7 @@ export default function Home() {
                 <div className="flex min-h-[calc(100dvh-260px)] items-center justify-center pb-24">
                   <div className="max-w-3xl text-center">
                     <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-3xl border border-blue-400/30 bg-blue-500/15 text-blue-200">
-                      <span className="material-symbols-outlined text-5xl symbol-filled">
-                        smart_toy
-                      </span>
+                      <Bot className="h-11 w-11" aria-hidden="true" />
                     </div>
                     <h2 className="text-4xl font-semibold text-white">
                       Start a new financial research chat
@@ -309,9 +310,7 @@ export default function Home() {
               {isLoading && (
                 <div className="mt-5 w-full rounded-2xl border border-white/10 bg-white/[0.03] p-5">
                   <div className="flex items-center gap-3 text-lg text-zinc-300">
-                    <span className="material-symbols-outlined animate-spin text-blue-300">
-                      progress_activity
-                    </span>
+                    <LoaderCircle className="h-6 w-6 animate-spin text-blue-300" aria-hidden="true" />
                     {progressText}
                   </div>
                 </div>
@@ -346,9 +345,11 @@ export default function Home() {
                   className="flex h-20 w-20 shrink-0 items-center justify-center rounded-2xl bg-blue-600 text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-400"
                   aria-label="Send message"
                 >
-                  <span className="material-symbols-outlined text-3xl">
-                    {isLoading ? "hourglass_top" : "arrow_upward"}
-                  </span>
+                  {isLoading ? (
+                    <Hourglass className="h-8 w-8" aria-hidden="true" />
+                  ) : (
+                    <ArrowUp className="h-8 w-8" aria-hidden="true" />
+                  )}
                 </button>
               </div>
               <p className="mt-3 text-center text-base text-zinc-500">

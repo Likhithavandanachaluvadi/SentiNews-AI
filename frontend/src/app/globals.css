@@ -18,32 +18,15 @@ html.dark {
 body {
   background-color: #11131a;
   color: #e1e2eb;
-  font-family: "Inter", sans-serif;
-  font-size: 13px;
-  line-height: 1.5;
+  font-family: Arial, Helvetica, Verdana, "Segoe UI", sans-serif;
+  font-size: 16px;
+  line-height: 1.6;
   overflow-x: hidden;
 }
 
 ::selection {
   background-color: #4285f4;
   color: #ffffff;
-}
-
-/* Material Icons */
-.material-symbols-outlined {
-  font-variation-settings:
-    "FILL" 0,
-    "wght" 400,
-    "GRAD" 0,
-    "opsz" 24;
-}
-
-.symbol-filled {
-  font-variation-settings:
-    "FILL" 1,
-    "wght" 400,
-    "GRAD" 0,
-    "opsz" 24;
 }
 
 /* Grid Background Pattern */
@@ -204,7 +187,7 @@ body {
 }
 
 .markdown-body code {
-  font-family: "JetBrains Mono", monospace;
+  font-family: Consolas, "Courier New", monospace;
   background-color: rgba(66, 133, 244, 0.1);
   padding: 0.2rem 0.4rem;
   border-radius: 4px;

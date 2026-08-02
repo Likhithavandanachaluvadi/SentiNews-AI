@@ -24,33 +24,39 @@ interface StockChartProps {
 }
 
 export default function StockChart({ ticker, data = [], isLoading = false }: StockChartProps) {
-  const [chartData, setChartData] = useState<PriceData[]>([]);
+  const [fetchedData, setFetchedData] = useState<PriceData[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const chartData = data.length > 0 ? data : fetchedData;
 
   useEffect(() => {
-    if (data && data.length > 0) {
-      setChartData(data);
-    }
-  }, [data]);
+    if (!ticker || data.length > 0) return;
 
-  useEffect(() => {
-    if (!ticker || (data && data.length > 0)) return;
-    fetchPriceHistory(ticker);
-  }, [ticker]);
+    let cancelled = false;
 
-  const fetchPriceHistory = async (tickerSymbol: string) => {
-    try {
-      const response = await fetch(`http://localhost:/api/v1/market/history/${tickerSymbol}`);
-      if (!response.ok) {
-        throw new Error('Failed to fetch price history');
+    async function loadPriceHistory() {
+      try {
+        const response = await fetch(`http://localhost:8001/api/v1/market/history/${ticker}`);
+        if (!response.ok) {
+          throw new Error('Failed to fetch price history');
+        }
+        const jsonData = await response.json();
+        if (!cancelled) {
+          setFetchedData(jsonData.history || []);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : 'Unknown error');
+        }
+        console.error('Failed to fetch price history:', err);
       }
-      const jsonData = await response.json();
-      setChartData(jsonData.history || []);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error');
-      console.error('Failed to fetch price history:', err);
     }
-  };
+
+    void loadPriceHistory();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [ticker, data.length]);
 
   if (isLoading) {
     return (

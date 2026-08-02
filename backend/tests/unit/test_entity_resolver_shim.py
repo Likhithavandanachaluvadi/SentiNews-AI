@@ -1,4 +1,5 @@
 import pytest
+from unittest.mock import AsyncMock, patch
 from src.services.entity_resolver import EntityResolver, EntityResolutionError
 
 @pytest.fixture(autouse=True)
@@ -31,12 +32,20 @@ def test_resolver_sync_raise_on_fail():
 
 @pytest.mark.asyncio
 async def test_resolver_async_success():
-    ticker, name = await EntityResolver.resolve("Analyze TCS")
+    async def initialize_without_db(*args, **kwargs):
+        EntityResolver.initialize_sync()
+
+    with patch.object(EntityResolver, "initialize_async", new=AsyncMock(side_effect=initialize_without_db)):
+        ticker, name = await EntityResolver.resolve("Analyze TCS")
     assert ticker == "TCS"
     assert name.lower().startswith("tata consultancy services")
 
 @pytest.mark.asyncio
 async def test_resolver_async_no_match():
-    ticker, name = await EntityResolver.resolve("What is PE ratio")
+    async def initialize_without_db(*args, **kwargs):
+        EntityResolver.initialize_sync()
+
+    with patch.object(EntityResolver, "initialize_async", new=AsyncMock(side_effect=initialize_without_db)):
+        ticker, name = await EntityResolver.resolve("What is PE ratio")
     assert ticker is None
     assert name is None

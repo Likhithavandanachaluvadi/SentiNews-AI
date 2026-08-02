@@ -91,6 +91,36 @@ def test_company_comparison_validator_allows_two_companies():
     )
 
 
+def test_validator_ignores_common_word_ticker_false_positive():
+    entity_collection = {
+        "entities": [
+            {
+                "ticker": "HDFCBANK",
+                "company_name": "HDFC Bank",
+                "confidence": 0.97,
+                "resolution_source": "EXACT_NAME",
+                "query_span": "HDFC Bank",
+            },
+            {
+                "ticker": "CAN",
+                "company_name": "Canaan Inc.",
+                "confidence": 1.0,
+                "resolution_source": "EXACT_TICKER",
+                "query_span": "Can",
+            },
+        ],
+        "query": "Can you explain HDFC Bank news?",
+        "resolution_mode": "MULTI",
+        "total_found": 2,
+    }
+
+    validate_query_multiple_companies(
+        "Can you explain HDFC Bank news?",
+        "NEWS_ANALYSIS",
+        entity_collection=entity_collection,
+    )
+
+
 @pytest.mark.parametrize("intent", ["EDUCATIONAL", "SECTOR_OUTLOOK", "THEME_ANALYSIS", "MARKET_OVERVIEW"])
 def test_tickerless_intents_do_not_require_ticker(intent):
     assert get_policy(intent).requires_ticker is False

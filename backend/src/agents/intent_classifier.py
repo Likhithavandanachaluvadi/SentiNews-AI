@@ -18,6 +18,7 @@ ROUTING RULES:
 """
 
 import logging
+import re
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_groq import ChatGroq
 from pydantic import BaseModel, Field
@@ -262,7 +263,12 @@ async def intent_classifier_node(state: dict) -> dict:
 
     # ========== STEP 2: ENTITY EXTRACTION AND PRE-CLASSIFICATION ==========
     from src.services.entity_resolution_pipeline import EntityResolutionPipeline
-    collection = EntityResolutionPipeline.resolve_entities_sync(query)
+    resolved_entities_dict = state.get("resolved_entities")
+    if resolved_entities_dict:
+        from src.services.entity_models import EntityCollection
+        collection = EntityCollection.from_dict(resolved_entities_dict)
+    else:
+        collection = EntityResolutionPipeline.resolve_entities_sync(query)
     
     candidates = EntityResolutionPipeline._extract_candidates(query)
     detected_entities_list = []
@@ -378,6 +384,15 @@ async def intent_classifier_node(state: dict) -> dict:
     if classification.intent_confidence < LOW_CONFIDENCE_THRESHOLD:
         classification.primary_intent = "GENERALIZED"
         classification.complexity_level = "DEEP"
+
+    # Force THEME_ANALYSIS for plural/thematic list queries without resolved local companies
+    query_lower = query.lower()
+    theme_indicators = {"companies", "stocks", "shares", "themes", "trends"}
+    query_words = set(re.findall(r'\b[a-z]+\b', query_lower))
+    if query_words.intersection(theme_indicators) and (collection is None or collection.total_found == 0):
+        classification.primary_intent = "THEME_ANALYSIS"
+        classification.complexity_level = "LIGHT"
+        classification.requires_live_data = True
 
     # ========== STEP 4: INTENT DECISION LAYER ==========
     decision = _make_intent_decision(

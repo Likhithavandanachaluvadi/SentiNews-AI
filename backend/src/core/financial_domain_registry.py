@@ -24,7 +24,9 @@ SUPPORTED_MARKETS = ["NSE", "BSE", "NYSE", "NASDAQ"]
 # Format: (compiled_regex, asset_class_name)
 FINANCIAL_VOCABULARY = [
     # Stocks & Companies
-    (re.compile(r"\b(stocks?|shares?|equit(y|ies))\b", re.IGNORECASE), "Stocks"),
+    (re.compile(r"\b(stocks?|shares?|equit(y|ies)|compan(y|ies)|firms?|corporat(e|ions?)|businesses?)\b", re.IGNORECASE), "Stocks"),
+    # Sectors, Industries & Themes
+    (re.compile(r"\b(sectors?|industr(y|ies)|themes?|trends?|adoptions?)\b", re.IGNORECASE), "Stocks"),
     # ETFs
     (re.compile(r"\b(etfs?)\b", re.IGNORECASE), "ETFs"),
     # Mutual Funds

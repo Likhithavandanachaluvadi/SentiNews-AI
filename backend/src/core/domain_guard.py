@@ -30,7 +30,7 @@ class FinancialDomainGuard:
     """
 
     @staticmethod
-    def validate(query: str) -> DomainValidationResult:
+    def validate(query: str, resolved_entities: Optional[dict] = None) -> DomainValidationResult:
         """
         Validates if a query belongs to the supported financial ecosystem.
         Runs a 4-tier validation pipeline:
@@ -43,7 +43,16 @@ class FinancialDomainGuard:
         query_lower = query_clean.lower()
 
         # Tier 1: Local Entity Resolution Check (Strict Local Mode)
-        ticker, company = EntityResolver.resolve_sync(query_clean)
+        ticker = None
+        company = None
+        if resolved_entities:
+            from src.services.entity_models import EntityCollection
+            collection = EntityCollection.from_dict(resolved_entities)
+            if not collection.is_empty and collection.primary:
+                ticker = collection.primary_ticker
+                company = collection.primary.company_name
+        else:
+            ticker, company = EntityResolver.resolve_sync(query_clean)
         if ticker:
             # Filter out generic matching false positives
             words_in_query = set(re.findall(r'\b[a-zA-Z0-9&\-._]+\b', query_lower))

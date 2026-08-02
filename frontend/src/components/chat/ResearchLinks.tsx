@@ -1,5 +1,6 @@
 import React from "react";
 import { motion } from "framer-motion";
+import { ExternalLink } from "lucide-react";
 
 export interface SourceItem {
     title: string;
@@ -57,9 +58,7 @@ const ResearchLinks: React.FC<ResearchLinksProps> = ({ sources }) => {
                                 {src.source_type}
                             </p>
                         </div>
-                        <span className="material-symbols-outlined text-zinc-500 group-hover:text-blue-400 text-xs transition-colors flex-shrink-0">
-                            open_in_new
-                        </span>
+                        <ExternalLink className="h-3.5 w-3.5 flex-shrink-0 text-zinc-500 transition-colors group-hover:text-blue-400" aria-hidden="true" />
                     </motion.a>
                 ))}
             </div>

@@ -13,6 +13,7 @@ class ResearchState(TypedDict):
     # ===== INPUT =====
     query: str
     ticker: str
+    resolved_entities: Optional[dict]
     
     # ===== INTENT CLASSIFICATION =====
     intent: Optional[dict]  # IntentClassification output (primary, secondary, confidence, risk, complexity, etc.)

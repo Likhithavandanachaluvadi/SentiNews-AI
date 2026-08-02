@@ -27,6 +27,56 @@ NON_ENTITY_CANDIDATES = {
     "up", "down", "stock", "share", "shares", "price",
 }
 
+COMMON_ENGLISH_TICKER_WORDS = {
+    "am", "an", "as", "at", "be", "by", "can", "do", "for", "go", "he",
+    "i", "if", "in", "is", "it", "may", "me", "my", "no", "of", "on", "or",
+    "so", "to", "up", "us", "we",
+    "are", "but", "did", "had", "has", "her", "his", "how", "new", "not",
+    "now", "one", "our", "out", "own", "see", "she", "the", "too", "was",
+    "who", "why", "yes", "yet", "you",
+    "been", "best", "does", "from", "good", "have", "just", "like", "long",
+    "more", "most", "must", "news", "only", "over", "same", "some", "such",
+    "than", "that", "then", "they", "this", "very", "what", "when", "will",
+    "with", "would",
+}
+
+ACTION_VERBS = {
+    "analyze", "analyse", "rank", "identify", "compare", "evaluate",
+    "research", "tell", "show", "find", "list", "check", "study",
+    "report", "predict", "forecast", "explain", "describe", "summarize",
+    "suggest", "recommend", "give", "get", "look", "outlook", "overview"
+}
+
+QUESTION_WORDS = {
+    "why", "what", "when", "where", "who", "which", "how", "whose", "whom"
+}
+
+COUNTRY_DEMONYMS = {
+    "india", "indian", "us", "usa", "american", "america", "china", "chinese",
+    "japan", "japanese", "uk", "british", "germany", "german", "france", "french",
+    "global", "world", "international"
+}
+
+TIME_UNITS = {
+    "month", "months", "year", "years", "day", "days", "week", "weeks",
+    "quarter", "quarters", "q1", "q2", "q3", "q4", "annual", "annually",
+    "quarterly", "yoy", "qoq"
+}
+
+STOP_WORDS_GENERIC = {
+    "the", "a", "an", "in", "on", "at", "by", "for", "with", "about", "against",
+    "between", "into", "through", "during", "before", "after", "above", "below",
+    "to", "from", "up", "down", "over", "under", "and", "or", "but", "so", "if",
+    "than", "then", "of", "supporting", "evidence", "government", "investment",
+    "investments", "investing", "companies", "company", "stock", "stocks",
+    "share", "shares", "price", "prices", "market", "markets", "industry",
+    "industries", "sector", "sectors", "impact", "next", "future", "trend",
+    "trends", "growth", "prospects", "performance", "analysis", "data",
+    "details", "info", "information", "over", "latest", "update", "updates",
+    "increasing", "decreasing", "rising", "falling", "top", "best", "worst",
+    "high", "low", "with", "without", "among"
+}
+
 class EntityResolutionPipeline:
     MINIMUM_CONFIDENCE_THRESHOLD = 0.60
     FUZZY_MATCH_THRESHOLD = 0.80
@@ -68,8 +118,46 @@ class EntityResolutionPipeline:
         "Cloud": "industry_theme",
         "Cybersecurity": "industry_theme",
         "Semiconductor": "industry_theme",
-        "EV": "industry_theme"
+        "EV": "industry_theme",
+        "Renewable Energy": "industry_theme",
+        "Clean Energy": "industry_theme"
     }
+
+    @classmethod
+    def _is_explicit_ticker_mention(cls, candidate: str, query: str) -> bool:
+        candidate_clean = candidate.strip()
+        candidate_upper = candidate_clean.upper()
+
+        if not candidate_clean:
+            return False
+
+        # Tickers are normally typed in uppercase. Preserve that path so
+        # legitimate short symbols such as CAN, MAY, IT, or AI still work.
+        if candidate_clean == candidate_upper and re.search(r"[A-Z]", candidate_clean):
+            return True
+
+        # Symbols with exchange-style punctuation are intentional ticker inputs.
+        if re.search(r"[0-9&\-._]", candidate_clean):
+            return True
+
+        query_lower = query.lower()
+        token = re.escape(candidate_clean.lower())
+        explicit_patterns = [
+            rf"\bticker\s+{token}\b",
+            rf"\bsymbol\s+{token}\b",
+            rf"\bquote\s+{token}\b",
+            rf"\b{token}\s+ticker\b",
+            rf"\b{token}\s+symbol\b",
+        ]
+        return any(re.search(pattern, query_lower) for pattern in explicit_patterns)
+
+    @classmethod
+    def _is_common_word_ticker_false_positive(cls, candidate: str, query: str) -> bool:
+        cand_lower = candidate.lower().strip()
+        if cand_lower not in COMMON_ENGLISH_TICKER_WORDS:
+            return False
+
+        return not cls._is_explicit_ticker_mention(candidate, query)
 
     @classmethod
     def _classify_candidate(cls, candidate: str, query: str) -> str:
@@ -77,15 +165,95 @@ class EntityResolutionPipeline:
         cand_lower = candidate.lower().strip()
         query_lower = query.lower()
 
-        # Step 5: Sector Handling
-        sector_keywords = ["banking", "it", "pharma", "energy", "auto", "technology", "renewable energy"]
+        # Clean articles from start if present (e.g. "The Indian" -> "indian")
+        cand_clean_word = re.sub(r'^(the|a|an)\s+', '', cand_lower).strip()
+
+        # Step 0.0: Check if candidate is a financial action word or generic query phrase
+        ignored_phrases = {
+            "buy", "sell", "invest", "investing", "hold", "purchase", "recommend",
+            "should i", "should", "would", "could", "investor", "investors", "portfolio",
+            "i", "me", "my", "to", "now"
+        }
+        if cls._is_common_word_ticker_false_positive(candidate, query):
+            return "generic_phrase"
+        if cand_lower in ignored_phrases:
+            return "generic_phrase"
+        span_tokens = [w for w in re.findall(r'\b[a-z]+\b', cand_lower) if w]
+        if (
+            span_tokens
+            and all(t in COMMON_ENGLISH_TICKER_WORDS for t in span_tokens)
+            and not cls._is_explicit_ticker_mention(candidate, query)
+        ):
+            return "generic_phrase"
+        if span_tokens and all(t in ignored_phrases for t in span_tokens):
+            return "generic_phrase"
+
+        # Step 0.1: Check if single word candidate is a corporate stopword
+        corporate_stopwords = {
+            "corporation", "corp", "limited", "ltd", "inc", "incorporated", "company", "bank", "industries", "group", "holdings", "private", "pvt",
+            "services", "motors", "holding", "holdings", "steel", "power", "chemicals", "pharma"
+        }
+        if len(cand_lower.split()) == 1 and cand_lower in corporate_stopwords:
+            return "generic_phrase"
+
+        # Step 0.2: Direct database lookup check to ensure known companies are classified as company/ticker first
+        # But skip for protected concepts (like "AI" or "IT") so that registry logic handles them case-specifically
+        is_protected = cand_upper in cls.PROTECTED_CONCEPTS or candidate in cls.PROTECTED_CONCEPTS
+        if not is_protected:
+            from src.services.entity_resolver import EntityResolver, LEGACY_EDGE_CASES
+            EntityResolver.initialize_sync()
+            if candidate in EntityResolver._ticker_to_company or cand_upper in EntityResolver._ticker_to_company:
+                return "ticker"
+            if cand_lower in EntityResolver._company_to_ticker or cand_lower in LEGACY_EDGE_CASES:
+                return "company"
+            from src.services.entity_resolver import clean_company_name
+            cand_clean_name = clean_company_name(cand_lower)
+            for comp_name in EntityResolver._company_to_ticker:
+                if clean_company_name(comp_name) == cand_clean_name:
+                    return "company"
+
+        # 1. Numbers & Time Periods
+        if cand_lower.isdigit():
+            words_near = re.findall(r'\b[a-z0-9]+\b', query_lower)
+            if any(tu in words_near for tu in TIME_UNITS):
+                return "time_period"
+            return "number"
+
+        if re.search(r'^\d+\s*(months?|years?|days?|weeks?|quarters?)$', cand_lower):
+            return "time_period"
+
+        # 2. Action Verbs
+        if cand_lower in ACTION_VERBS or cand_clean_word in ACTION_VERBS:
+            return "action"
+
+        # 3. Question Words
+        if cand_lower in QUESTION_WORDS:
+            return "question_word"
+
+        # 4. Country / Demonym
+        if cand_lower in COUNTRY_DEMONYMS or cand_clean_word in COUNTRY_DEMONYMS:
+            from src.services.entity_resolver import EntityResolver
+            EntityResolver.initialize_sync()
+            if cand_upper not in EntityResolver._ticker_to_company and cand_lower not in EntityResolver._company_to_ticker:
+                return "country"
+
+        # 5. Sector & Theme Handling
+        theme_indicators = {"companies", "stocks", "shares", "sectors", "industries", "trends", "themes", "sector", "industry", "theme"}
+        cand_words = set(re.findall(r'\b[a-z]+\b', cand_lower))
+        if cand_words.intersection(theme_indicators):
+            sector_names = {"banking", "it", "pharma", "energy", "auto", "technology", "fmcg", "telecom", "infrastructure"}
+            if any(sn in cand_lower for sn in sector_names):
+                return "sector"
+            return "industry_theme"
+
+        sector_keywords = ["banking", "it", "pharma", "energy", "auto", "technology", "renewable energy", "clean energy"]
         sector_indicators = ["sector", "industry", "companies"]
         
         for sect in sector_keywords:
             for ind in sector_indicators:
                 phrase = f"{sect} {ind}"
-                if phrase in cand_lower:
-                    return "sector"
+                if phrase in cand_lower or cand_lower == phrase:
+                    return "sector" if sect in ["banking", "it", "pharma", "energy", "auto", "technology"] else "industry_theme"
                 if cand_lower == sect:
                     pattern = rf"\b{re.escape(cand_lower)}\s+{re.escape(ind)}\b"
                     if re.search(pattern, query_lower):
@@ -94,12 +262,17 @@ class EntityResolutionPipeline:
                     if re.search(pattern_pre, query_lower):
                         return "sector"
 
-        # Protected Concepts Registry Lookup
+        if cand_lower in ["renewable energy", "clean energy", "solar", "ev", "electric vehicles"]:
+            return "industry_theme"
+
+        # 6. Protected Concepts Registry Lookup
         for concept, concept_type in cls.PROTECTED_CONCEPTS.items():
             if cand_upper == concept.upper() or cand_lower == concept.lower():
-                # Step 6: Ambiguous Token Handling (AI / IT)
                 if cand_upper == "AI":
-                    positive_company_signals = ["stock", "share", "listed", "earnings", "market cap", "valuation", "fundamentals", "ticker"]
+                    theme_words = ["theme", "trends", "stocks", "companies", "shares", "sectors", "industries"]
+                    if any(tw in query_lower for tw in theme_words):
+                        return "technology_concept"
+                    positive_company_signals = ["stock ", "share ", "listed", "earnings", "market cap", "valuation", "fundamentals", "ticker"]
                     if any(sig in query_lower for sig in positive_company_signals):
                         return "company"
                     return "technology_concept"
@@ -110,29 +283,65 @@ class EntityResolutionPipeline:
                     return "sector"
                 return concept_type
 
-        # Suffix / local database matching
+        # 7. Suffix / Local Database matching
         company_suffixes = ["ltd", "limited", "inc", "corp", "corporation", "co", "pvt", "private"]
         if any(rf"\b{re.escape(suff)}\b" in cand_lower for suff in company_suffixes):
             return "company"
 
-        if re.match(r"^[A-Z0-9&\-._]{1,10}$", candidate) and cand_lower not in NON_ENTITY_CANDIDATES:
-            from src.services.entity_resolver import EntityResolver
-            EntityResolver.initialize_sync()
-            if candidate in EntityResolver._ticker_to_company:
-                return "ticker"
-
-        from src.services.entity_resolver import EntityResolver
+        from src.services.entity_resolver import EntityResolver, LEGACY_EDGE_CASES
         EntityResolver.initialize_sync()
-        if cand_lower in EntityResolver._company_to_ticker:
+        if candidate in EntityResolver._ticker_to_company or cand_upper in EntityResolver._ticker_to_company:
+            return "ticker"
+
+        if cand_lower in EntityResolver._company_to_ticker or cand_lower in LEGACY_EDGE_CASES:
             return "company"
 
-        return "company"
+        # 8. Stop Words & Generic English Phrases
+        cand_tokens = [w for w in cand_lower.split() if w]
+        if any(w in ACTION_VERBS for w in cand_tokens) and not any(suff in cand_lower for suff in company_suffixes):
+            return "action" if len(cand_tokens) == 1 else "generic_phrase"
+
+        if all(w in STOP_WORDS_GENERIC or w in ACTION_VERBS or w in QUESTION_WORDS or w in COUNTRY_DEMONYMS for w in cand_tokens):
+            return "generic_phrase"
+
+        # 9. Fallback Classification
+        if re.match(r"^[A-Z0-9&\-._]{2,6}$", candidate) and cand_lower not in NON_ENTITY_CANDIDATES:
+            return "company"
+
+        if re.match(r"^[A-Z][a-zA-Z0-9&\-._\s]*$", candidate) and len(candidate) >= 3 and len(cand_tokens) <= 4:
+            # Check if it contains action verbs, demonyms, or all generic tokens
+            has_action = any(w in ACTION_VERBS for w in cand_tokens)
+            all_generic = all(w in STOP_WORDS_GENERIC or w in ACTION_VERBS or w in QUESTION_WORDS or w in COUNTRY_DEMONYMS for w in cand_tokens)
+            if not has_action and not all_generic:
+                return "company"
+
+        return "generic_phrase"
 
     @classmethod
     def _validate_context(cls, candidate: str, query: str) -> bool:
+        from src.services.entity_resolver import EntityResolver, LEGACY_EDGE_CASES
+        EntityResolver.initialize_sync()
+        cand_upper = candidate.upper().strip()
+        cand_lower = candidate.lower().strip()
+
+        # Exact tickers and exact company names in local baseline/DB are always valid stock queries
+        if cand_upper in EntityResolver._ticker_to_company or cand_lower in EntityResolver._company_to_ticker or cand_lower in LEGACY_EDGE_CASES:
+            return True
+
         query_lower = query.lower()
-        positive_company_signals = ["stock", "share", "company", "listed", "ticker", "valuation", "earnings", "market cap", "fundamentals"]
-        negative_company_signals = ["industry", "sector", "explain", "meaning", "concept", "technology", "adoption", "trend", "outlook", "beginner"]
+        
+        # If the query contains thematic indicators (plural company/stock terms, sector/theme descriptors),
+        # then restrict matching only to exact local database matches. Prevent generic terms from dynamically 
+        # resolving to single stocks.
+        theme_keywords = {
+            "companies", "stocks", "shares", "sectors", "industries", "trends", "themes",
+            "sector", "industry", "theme", "adoption", "concepts", "concept"
+        }
+        query_words = set(re.findall(r'\b[a-z]+\b', query_lower))
+        if query_words.intersection(theme_keywords):
+            return False
+        positive_company_signals = ["stock", "share", "company", "listed", "ticker", "valuation", "earnings", "market cap", "fundamentals", "outlook"]
+        negative_company_signals = ["industry", "sector", "explain", "meaning", "concept", "technology", "adoption", "trend", "beginner"]
         
         has_negative = any(sig in query_lower for sig in negative_company_signals)
         has_positive = any(sig in query_lower for sig in positive_company_signals)
@@ -147,74 +356,109 @@ class EntityResolutionPipeline:
         if not query or not query.strip():
             return EntityCollection(entities=[], query=query, resolution_mode="EDUCATIONAL", total_found=0)
 
-        # Stage 1: Candidate Extraction
-        candidates = cls._extract_candidates(query)
-        logger.info(f"Pipeline sync: extracted candidates={candidates} from query='{query}'")
+        # 1. Initialize & load DB
+        from src.services.entity_resolver import EntityResolver
+        EntityResolver.initialize_sync()
 
-        resolved_list = []
-        for cand in candidates:
-            # Step 1: Candidate Classification
+        # 2. Tokenize query
+        raw_words = query.strip().split()
+        words = []
+        for w in raw_words:
+            cleaned_w = w.strip(" ?.,!():;\"'")
+            cleaned_w = re.sub(r"'[sS]$", "", cleaned_w)
+            cleaned_w = cleaned_w.rstrip("'")
+            if cleaned_w:
+                words.append(cleaned_w)
+
+        num_words = len(words)
+        candidate_matches = []
+
+        generic_words = {
+            "bank", "industries", "limited", "corp", "corporation", "ltd", "inc", "company",
+            "services", "motors", "holding", "holdings", "group", "india", "state", "national",
+            "mutual", "fund", "funds", "general", "steel", "power", "chemicals", "pharma"
+        }
+
+        # 3. Generate and match n-grams (5 down to 1)
+        blocked_connectors = {"and", "or", "vs", "versus", "compare", "between", "against", "with", "compared"}
+        for n in range(min(5, num_words), 0, -1):
+            for start in range(num_words - n + 1):
+                end = start + n - 1
+                candidate_span = " ".join(words[start:end+1])
+                candidate_lower = candidate_span.lower().strip()
+
+                # Skip candidate if it contains comparison/conjunction connectors
+                span_words = set(re.findall(r'\b[a-z]+\b', candidate_lower))
+                if span_words.intersection(blocked_connectors):
+                    continue
+
+                # Skip single-word generic lookups
+                if n == 1 and candidate_lower in generic_words:
+                    continue
+
+                # Skip if not classified as company/ticker
+                ent_type = cls._classify_candidate(candidate_span, query)
+                if ent_type not in ("company", "ticker"):
+                    continue
+
+                # Perform match
+                entity = cls._match_candidate(candidate_span)
+                if not entity:
+                    entity = cls._fuzzy_match(candidate_span)
+
+                if entity:
+                    candidate_matches.append({
+                        "entity": entity,
+                        "start_idx": start,
+                        "end_idx": end,
+                        "length": n,
+                        "confidence": entity.confidence
+                    })
+
+        # 4. Greedy Selection (by length descending, then confidence descending)
+        candidate_matches.sort(key=lambda x: (x["length"], x["confidence"]), reverse=True)
+
+        selected_indices = set()
+        accepted_entities = []
+
+        for match in candidate_matches:
+            start = match["start_idx"]
+            end = match["end_idx"]
+            span_indices = set(range(start, end + 1))
+
+            if not span_indices.intersection(selected_indices):
+                if cls._validate_context(match["entity"].query_span, query):
+                    accepted_entities.append(match["entity"])
+                    selected_indices.update(span_indices)
+
+        # 5. Fallback Yahoo Discovery for unresolved candidates
+        extracted = cls._extract_candidates(query)
+        for cand in extracted:
             ent_type = cls._classify_candidate(cand, query)
-            
-            # Step 7: Improved debug logging
-            context_val = "educational" if "explain" in query.lower() or "what is" in query.lower() else "analytical"
-            
-            # Step 4: Resolution Rules
             if ent_type not in ("company", "ticker"):
-                logger.info(
-                    f"\nCandidate: {cand}\n"
-                    f"Classification: {ent_type}\n"
-                    f"Context: {context_val}\n"
-                    f"Resolution Decision: Skip ticker lookup\n"
-                    f"Reason: Protected concept or non-company entity.\n"
-                )
-                continue
-                
-            # Step 3: Context Validation
-            if not cls._validate_context(cand, query):
-                logger.info(
-                    f"\nCandidate: {cand}\n"
-                    f"Classification: {ent_type}\n"
-                    f"Context: {context_val}\n"
-                    f"Resolution Decision: Skip ticker lookup\n"
-                    f"Reason: Context validation blocked company resolution due to negative context/signals.\n"
-                )
-                continue
-                
-            logger.info(
-                f"\nCandidate: {cand}\n"
-                f"Classification: {ent_type}\n"
-                f"Context: {context_val}\n"
-                f"Resolution Decision: Proceed with ticker lookup\n"
-                f"Reason: Candidate classified as company/ticker with valid stock context.\n"
-            )
-
-            # Stage 2: Per-Candidate Multi-Source Matching
-            matched = cls._match_candidate(cand)
-            if matched:
-                resolved_list.append(matched)
                 continue
 
-            # Stage 4: Fuzzy Matching
-            matched_fuzzy = cls._fuzzy_match(cand)
-            if matched_fuzzy:
-                resolved_list.append(matched_fuzzy)
+            if cls._is_candidate_covered_by_high_confidence_local_entity(cand, accepted_entities):
                 continue
 
-            # Stage 5: Yahoo Finance Discovery (Sync cached check/fetch)
-            # Only unresolved, uncovered candidates are eligible for discovery.
-            if cls._is_candidate_covered_by_high_confidence_local_entity(cand, resolved_list):
-                logger.info(f"Skipping Yahoo discovery for covered candidate='{cand}'")
+            # Substring cover check
+            cand_lower = cand.lower().strip()
+            is_covered = False
+            for ae in accepted_entities:
+                if cand_lower in ae.company_name.lower() or cand_lower in ae.query_span.lower() or ae.ticker.lower() == cand_lower:
+                    is_covered = True
+                    break
+            if is_covered:
                 continue
 
-            matched_yahoo = cls._discover_via_yahoo_sync(cand, existing_entities=resolved_list)
-            if matched_yahoo:
-                resolved_list.append(matched_yahoo)
+            discovered = cls._discover_via_yahoo_sync(cand, existing_entities=accepted_entities)
+            if discovered:
+                accepted_entities.append(discovered)
 
-        # Stage 6: Ranking and Deduplication
-        collection = cls._rank_and_deduplicate(resolved_list, query)
+        # 6. Rank and Deduplicate
+        collection = cls._rank_and_deduplicate(accepted_entities, query)
 
-        # Stage 7: Validation Gate
+        # 7. Validation Gate
         if intent:
             cls._validate(collection, intent)
 
@@ -226,81 +470,114 @@ class EntityResolutionPipeline:
         if not query or not query.strip():
             return EntityCollection(entities=[], query=query, resolution_mode="EDUCATIONAL", total_found=0)
 
-        # Stage 1: Candidate Extraction
-        candidates = cls._extract_candidates(query)
-        logger.info(f"Pipeline async: extracted candidates={candidates} from query='{query}'")
+        # 1. Initialize & load DB
+        from src.services.entity_resolver import EntityResolver
+        await EntityResolver.initialize_async()
 
-        resolved_list = []
+        # 2. Tokenize query
+        raw_words = query.strip().split()
+        words = []
+        for w in raw_words:
+            cleaned_w = w.strip(" ?.,!():;\"'")
+            cleaned_w = re.sub(r"'[sS]$", "", cleaned_w)
+            cleaned_w = cleaned_w.rstrip("'")
+            if cleaned_w:
+                words.append(cleaned_w)
+
+        num_words = len(words)
+        candidate_matches = []
+
+        generic_words = {
+            "bank", "industries", "limited", "corp", "corporation", "ltd", "inc", "company",
+            "services", "motors", "holding", "holdings", "group", "india", "state", "national",
+            "mutual", "fund", "funds", "general", "steel", "power", "chemicals", "pharma"
+        }
+
+        # 3. Generate and match n-grams (5 down to 1)
+        blocked_connectors = {"and", "or", "vs", "versus", "compare", "between", "against", "with", "compared"}
+        for n in range(min(5, num_words), 0, -1):
+            for start in range(num_words - n + 1):
+                end = start + n - 1
+                candidate_span = " ".join(words[start:end+1])
+                candidate_lower = candidate_span.lower().strip()
+
+                # Skip candidate if it contains comparison/conjunction connectors
+                span_words = set(re.findall(r'\b[a-z]+\b', candidate_lower))
+                if span_words.intersection(blocked_connectors):
+                    continue
+
+                # Skip single-word generic lookups
+                if n == 1 and candidate_lower in generic_words:
+                    continue
+
+                # Skip if not classified as company/ticker
+                ent_type = cls._classify_candidate(candidate_span, query)
+                if ent_type not in ("company", "ticker"):
+                    continue
+
+                # Perform match
+                entity = cls._match_candidate(candidate_span)
+                if not entity:
+                    entity = cls._fuzzy_match(candidate_span)
+
+                if entity:
+                    candidate_matches.append({
+                        "entity": entity,
+                        "start_idx": start,
+                        "end_idx": end,
+                        "length": n,
+                        "confidence": entity.confidence
+                    })
+
+        # 4. Greedy Selection (by length descending, then confidence descending)
+        candidate_matches.sort(key=lambda x: (x["length"], x["confidence"]), reverse=True)
+
+        selected_indices = set()
+        accepted_entities = []
+
+        for match in candidate_matches:
+            start = match["start_idx"]
+            end = match["end_idx"]
+            span_indices = set(range(start, end + 1))
+
+            if not span_indices.intersection(selected_indices):
+                if cls._validate_context(match["entity"].query_span, query):
+                    accepted_entities.append(match["entity"])
+                    selected_indices.update(span_indices)
+
+        # 5. Fallback Yahoo Discovery for unresolved candidates
+        extracted = cls._extract_candidates(query)
         tasks = []
-
-        # We resolve matches sequentially or concurrently for Stage 2/4
-        # Since Stage 5 is async, we separate candidate resolution
-        for cand in candidates:
-            # Step 1: Candidate Classification
+        for cand in extracted:
             ent_type = cls._classify_candidate(cand, query)
-            
-            # Step 7: Improved debug logging
-            context_val = "educational" if "explain" in query.lower() or "what is" in query.lower() else "analytical"
-            
-            # Step 4: Resolution Rules
             if ent_type not in ("company", "ticker"):
-                logger.info(
-                    f"\nCandidate: {cand}\n"
-                    f"Classification: {ent_type}\n"
-                    f"Context: {context_val}\n"
-                    f"Resolution Decision: Skip ticker lookup\n"
-                    f"Reason: Protected concept or non-company entity.\n"
-                )
-                continue
-                
-            # Step 3: Context Validation
-            if not cls._validate_context(cand, query):
-                logger.info(
-                    f"\nCandidate: {cand}\n"
-                    f"Classification: {ent_type}\n"
-                    f"Context: {context_val}\n"
-                    f"Resolution Decision: Skip ticker lookup\n"
-                    f"Reason: Context validation blocked company resolution due to negative context/signals.\n"
-                )
-                continue
-                
-            logger.info(
-                f"\nCandidate: {cand}\n"
-                f"Classification: {ent_type}\n"
-                f"Context: {context_val}\n"
-                f"Resolution Decision: Proceed with ticker lookup\n"
-                f"Reason: Candidate classified as company/ticker with valid stock context.\n"
-            )
-
-            matched = cls._match_candidate(cand)
-            if matched:
-                resolved_list.append(matched)
                 continue
 
-            matched_fuzzy = cls._fuzzy_match(cand)
-            if matched_fuzzy:
-                resolved_list.append(matched_fuzzy)
+            if cls._is_candidate_covered_by_high_confidence_local_entity(cand, accepted_entities):
                 continue
 
-            # For Stage 5, create async tasks for parallel discovery.
-            # Discovery must enrich only unresolved candidates, never duplicate
-            # a high-confidence local ticker/name/alias resolution.
-            if cls._is_candidate_covered_by_high_confidence_local_entity(cand, resolved_list):
-                logger.info(f"Skipping Yahoo discovery for covered candidate='{cand}'")
+            # Substring cover check
+            cand_lower = cand.lower().strip()
+            is_covered = False
+            for ae in accepted_entities:
+                if cand_lower in ae.company_name.lower() or cand_lower in ae.query_span.lower() or ae.ticker.lower() == cand_lower:
+                    is_covered = True
+                    break
+            if is_covered:
                 continue
 
-            tasks.append(cls._discover_via_yahoo_async(cand, existing_entities=list(resolved_list)))
+            tasks.append(cls._discover_via_yahoo_async(cand, existing_entities=list(accepted_entities)))
 
         if tasks:
             yahoo_results = await asyncio.gather(*tasks, return_exceptions=True)
             for res in yahoo_results:
                 if res and isinstance(res, ResolvedEntity):
-                    resolved_list.append(res)
+                    accepted_entities.append(res)
 
-        # Stage 6: Ranking and Deduplication
-        collection = cls._rank_and_deduplicate(resolved_list, query)
+        # 6. Rank and Deduplicate
+        collection = cls._rank_and_deduplicate(accepted_entities, query)
 
-        # Stage 7: Validation Gate
+        # 7. Validation Gate
         if intent:
             cls._validate(collection, intent)
 
@@ -361,10 +638,10 @@ class EntityResolutionPipeline:
             if not seg_stripped:
                 continue
 
-            # 1. Tickers (All-caps 1-15 chars)
+            # 1. Tickers (All-caps 1-15 chars, exclude pure numbers)
             all_caps = re.findall(r'\b[A-Z0-9&\-._]{1,15}\b', seg_stripped)
             for ac in all_caps:
-                if ac.lower() in NON_ENTITY_CANDIDATES:
+                if ac.lower() in NON_ENTITY_CANDIDATES or ac.isdigit():
                     continue
                 if ac not in candidates and ac not in ["THE", "IS", "AND", "FOR", "OF", "IN", "TO", "A", "AN", "AT", "BY"]:
                     candidates.append(ac)
@@ -374,14 +651,19 @@ class EntityResolutionPipeline:
             for tc in title_case:
                 if tc.lower().strip() in NON_ENTITY_CANDIDATES:
                     continue
-                if tc not in candidates and len(tc) >= 3:
+                if tc not in candidates and len(tc) >= 2:
                     candidates.append(tc)
 
-            # 3. Cleaned segment itself
+            # 3. Cleaned segment itself (only if span is <= 4 words)
             if seg_stripped.lower().strip() in NON_ENTITY_CANDIDATES:
                 continue
-            if seg_stripped not in candidates and len(seg_stripped) >= 3:
+            if seg_stripped not in candidates and len(seg_stripped) >= 2 and len(seg_stripped.split()) <= 4:
                 candidates.append(seg_stripped)
+
+        # Extract primary action verb or lead word if present at start of query
+        first_word = query_clean.split()[0].strip(" ?,.!").lower() if query_clean.split() else ""
+        if first_word in ACTION_VERBS and first_word.capitalize() not in candidates and first_word not in candidates:
+            candidates.insert(0, first_word.capitalize())
 
         unique_candidates = []
         for c in candidates:
@@ -468,10 +750,9 @@ class EntityResolutionPipeline:
                 query_span=candidate
             )
 
-        # Step 2.4: Word boundary name lookup
+        candidate_clean = clean_company_name(candidate_lower)
         for comp_name, sym in EntityResolver._company_to_ticker.items():
-            pattern = rf"\b{re.escape(comp_name)}\b"
-            if re.search(pattern, candidate_lower):
+            if clean_company_name(comp_name) == candidate_clean:
                 company_name = EntityResolver._ticker_to_company[sym]
                 return ResolvedEntity(
                     ticker=sym,
@@ -485,36 +766,39 @@ class EntityResolutionPipeline:
                 )
 
         # Step 2.5: Whole-Word Significant Token Match
-        corporate_stopwords = {
-            "corporation", "corp", "limited", "ltd", "inc", "incorporated", "company", "bank", "industries", "group", "holdings", "private", "pvt",
-            "the", "and", "for", "out", "yes", "not", "buy", "sell", "good", "grow", "news", "risk", "risks",
-            "what", "are", "about", "with", "this", "that", "from", "your", "will", "than", "then",
-            "should", "invest", "today", "stock", "share", "shares", "how", "why", "who", "which",
-            "where", "when", "is", "are", "was", "were", "be", "been", "being", "have", "has", "had",
-            "do", "does", "did", "but", "if", "or", "because", "as", "until", "while", "of", "at", "by",
-            "for", "about", "against", "between", "into", "through", "during", "before", "after",
-            "above", "below", "to", "from", "up", "down", "in", "out", "on", "off", "over", "under",
-            "again", "further", "then", "once", "here", "there", "when", "where", "why", "how", "all",
-            "any", "both", "each", "few", "more", "most", "other", "some", "such", "no", "nor", "not",
-            "only", "own", "same", "so", "than", "too", "very", "can", "will", "just", "should", "now", "new",
-            "investment", "investments", "investing", "finance", "financial", "equity", "securities", "capital", "services", "service", "wealth", "advisory"
-        }
-        for comp_name, sym in EntityResolver._company_to_ticker.items():
-            cleaned_name = clean_company_name(comp_name)
-            name_words = [nw for nw in re.split(r'\W+', cleaned_name) if nw and len(nw) >= 3 and nw not in corporate_stopwords]
-            for nw in name_words:
-                pattern = rf"\b{re.escape(nw)}\b"
-                if re.search(pattern, candidate_lower):
-                    return ResolvedEntity(
-                        ticker=sym,
-                        company_name=EntityResolver._ticker_to_company[sym],
-                        exchange="NASDAQ" if sym in ["GOOGL", "TSLA", "AAPL", "NVDA"] else "NSE",
-                        country="US" if sym in ["GOOGL", "TSLA", "AAPL", "NVDA"] else "IN",
-                        confidence=0.80,
-                        resolution_source="WHOLE_WORD",
-                        aliases=cls._build_aliases(sym),
-                        query_span=candidate
-                    )
+        # Only run for single-word candidates to avoid matching multi-word spans to incorrect companies
+        if len(candidate_lower.split()) == 1:
+            corporate_stopwords = {
+                "corporation", "corp", "limited", "ltd", "inc", "incorporated", "company", "bank", "industries", "group", "holdings", "private", "pvt",
+                "the", "and", "for", "out", "yes", "not", "buy", "sell", "good", "grow", "news", "risk", "risks",
+                "what", "are", "about", "with", "this", "that", "from", "your", "will", "than", "then",
+                "should", "invest", "today", "stock", "share", "shares", "how", "why", "who", "which",
+                "where", "when", "is", "are", "was", "were", "be", "been", "being", "have", "has", "had",
+                "do", "does", "did", "but", "if", "or", "because", "as", "until", "while", "of", "at", "by",
+                "for", "about", "against", "between", "into", "through", "during", "before", "after",
+                "above", "below", "to", "from", "up", "down", "in", "out", "on", "off", "over", "under",
+                "again", "further", "then", "once", "here", "there", "when", "where", "why", "how", "all",
+                "any", "both", "each", "few", "more", "most", "other", "some", "such", "no", "nor", "not",
+                "only", "own", "same", "so", "than", "too", "very", "can", "will", "just", "should", "now", "new",
+                "investment", "investments", "investing", "finance", "financial", "equity", "securities", "capital", "services", "service", "wealth", "advisory",
+                "indian", "india", "american", "america", "global", "national", "international", "central", "overseas", "state", "general", "sun", "life"
+            }
+            for comp_name, sym in EntityResolver._company_to_ticker.items():
+                cleaned_name = clean_company_name(comp_name)
+                name_words = [nw for nw in re.split(r'\W+', cleaned_name) if nw and len(nw) >= 3 and nw not in corporate_stopwords]
+                for nw in name_words:
+                    pattern = rf"\b{re.escape(nw)}\b"
+                    if re.search(pattern, candidate_lower):
+                        return ResolvedEntity(
+                            ticker=sym,
+                            company_name=EntityResolver._ticker_to_company[sym],
+                            exchange="NASDAQ" if sym in ["GOOGL", "TSLA", "AAPL", "NVDA"] else "NSE",
+                            country="US" if sym in ["GOOGL", "TSLA", "AAPL", "NVDA"] else "IN",
+                            confidence=0.80,
+                            resolution_source="WHOLE_WORD",
+                            aliases=cls._build_aliases(sym),
+                            query_span=candidate
+                        )
         return None
 
     @classmethod
@@ -656,16 +940,16 @@ class EntityResolutionPipeline:
     def _extract_candidate_search_term_pipeline(cls, query: str) -> Optional[str]:
         cleaned = query.strip()
         cleaned = re.sub(
-            r'^(is|should i buy|should i invest in|what is|outlook for|evaluate|analyze|tell me about|how is|price of)\b',
+            r'^(is|should i buy|should i invest in|what is|outlook for|evaluate|analyze|analyse|rank|identify|compare|tell me about|how is|price of)\b',
             '', cleaned, flags=re.IGNORECASE
         ).strip()
         cleaned = re.sub(
-            r'\b(stock|share|shares|investment|financials|fundamentals|technical|news|analysis|report|a good buy|overvalued|undervalued|today)\b',
+            r'\b(stock|share|shares|investment|financials|fundamentals|technical|news|analysis|report|a good buy|overvalued|undervalued|today|supporting|evidence|government|months?|years?)\b',
             '', cleaned, flags=re.IGNORECASE
         ).strip()
 
         cleaned = re.sub(r'[^\w\s&.\-]', '', cleaned).strip()
-        words = cleaned.split()
+        words = [w for w in cleaned.split() if w.lower() not in STOP_WORDS_GENERIC and w.lower() not in ACTION_VERBS and w.lower() not in COUNTRY_DEMONYMS and not w.isdigit()]
         if len(words) > 0:
             return " ".join(words[:4])
         return None
@@ -676,7 +960,8 @@ class EntityResolutionPipeline:
         candidate: str,
         existing_entities: Optional[List[ResolvedEntity]] = None,
     ) -> Optional[ResolvedEntity]:
-        from src.services.entity_resolver import EntityResolver
+        import difflib
+        from src.services.entity_resolver import EntityResolver, clean_company_name
         candidate_normalized = candidate.lower().strip()
 
         if candidate_normalized in cls._yahoo_lru_cache:
@@ -685,6 +970,17 @@ class EntityResolutionPipeline:
         cand_term = cls._extract_candidate_search_term_pipeline(candidate_normalized)
         if not cand_term:
             return None
+
+        # Check if candidate is a low-confidence misspelling of a local entity
+        for sym, name in EntityResolver._ticker_to_company.items():
+            name_clean = clean_company_name(name)
+            ratio = difflib.SequenceMatcher(None, candidate_normalized, name_clean).ratio()
+            if 0.75 <= ratio < cls.FUZZY_MATCH_THRESHOLD:
+                logger.info(
+                    f"Skipping Yahoo discovery for candidate='{candidate}' "
+                    f"because it is a low-confidence misspelling of local entity '{name}' ({ratio:.2f})."
+                )
+                return None
 
         result = EntityResolver._search_yahoo_finance_sync(cand_term)
         if result:
@@ -732,7 +1028,7 @@ class EntityResolutionPipeline:
                         industry=result.get("industry", "N/A"),
                         sector=result.get("sector", "N/A")
                     ))
-                threading.Thread(target=run_async).start()
+                threading.Thread(target=run_async, daemon=True).start()
 
             EntityResolver._ticker_to_company[symbol] = company_name
             EntityResolver._company_to_ticker[company_name.lower().strip()] = symbol
@@ -747,7 +1043,8 @@ class EntityResolutionPipeline:
         candidate: str,
         existing_entities: Optional[List[ResolvedEntity]] = None,
     ) -> Optional[ResolvedEntity]:
-        from src.services.entity_resolver import EntityResolver
+        import difflib
+        from src.services.entity_resolver import EntityResolver, clean_company_name
         candidate_normalized = candidate.lower().strip()
 
         if candidate_normalized in cls._yahoo_lru_cache:
@@ -756,6 +1053,17 @@ class EntityResolutionPipeline:
         cand_term = cls._extract_candidate_search_term_pipeline(candidate_normalized)
         if not cand_term:
             return None
+
+        # Check if candidate is a low-confidence misspelling of a local entity
+        for sym, name in EntityResolver._ticker_to_company.items():
+            name_clean = clean_company_name(name)
+            ratio = difflib.SequenceMatcher(None, candidate_normalized, name_clean).ratio()
+            if 0.75 <= ratio < cls.FUZZY_MATCH_THRESHOLD:
+                logger.info(
+                    f"Skipping Yahoo discovery for candidate='{candidate}' "
+                    f"because it is a low-confidence misspelling of local entity '{name}' ({ratio:.2f})."
+                )
+                return None
 
         result = await EntityResolver._search_yahoo_finance_async(cand_term)
         if result:

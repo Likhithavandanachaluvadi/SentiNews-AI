@@ -1,5 +1,6 @@
 import React from "react";
 import { motion } from "framer-motion";
+import { ExternalLink } from "lucide-react";
 
 interface NewsItem {
   title: string;
@@ -88,7 +89,7 @@ export default function NewsCard({ news }: { news: NewsItem }) {
           onClick={(e) => e.stopPropagation()}
         >
           Read Full Article
-          <span className="material-symbols-outlined text-sm ml-1">open_in_new</span>
+          <ExternalLink className="ml-1 h-3.5 w-3.5" aria-hidden="true" />
         </a>
       )}
     </motion.article>

@@ -1,13 +1,7 @@
 import type { Metadata, Viewport } from "next";
-import { Inter, Hanken_Grotesk } from "next/font/google";
+import Image from "next/image";
 import "./globals.css";
 import { RootQueryProvider } from "@/lib/providers";
-
-const inter = Inter({ subsets: ["latin"] });
-const hankenGrotesk = Hanken_Grotesk({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
-});
 
 export const metadata: Metadata = {
   title: "SentiNews AI - with AI",
@@ -30,35 +24,24 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="dark" suppressHydrationWarning>
-      <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link
-          rel="preconnect"
-          href="https://fonts.gstatic.com"
-          crossOrigin="anonymous"
-        />
-        <link
-          href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap"
-          rel="stylesheet"
-        />
-        <link
-          rel="stylesheet"
-          href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
-        />
-      </head>
+      <head />
       <body
-        className={`${inter.className} min-h-screen bg-background text-on-surface antialiased flex flex-col`}
+        className="min-h-screen bg-background text-on-surface antialiased flex flex-col"
         suppressHydrationWarning
       >
         {/* Header */}
         <header className="bg-surface/80 backdrop-blur-md w-full z-50 sticky top-0 border-b border-surface-container-highest">
           <div className="flex justify-between items-center w-full px-6 md:px-10 max-w-[1300px] mx-auto h-20">
             <div className="flex items-center gap-2">
-              <span className="material-symbols-outlined text-google-blue symbol-filled text-3xl">
-                insights
-              </span>
+              <Image
+                src="/sentinews-logo.jpg"
+                alt="SentiNews AI"
+                width={40}
+                height={40}
+                className="h-10 w-10 rounded-full object-cover"
+              />
               <span
-                className={`${hankenGrotesk.className} font-headline-md text-headline-md font-bold text-primary dark:text-primary tracking-tight`}
+                className="font-headline-md text-headline-md font-bold text-primary dark:text-primary tracking-tight"
               >
                 SentiNews AI
               </span>
@@ -119,11 +102,15 @@ export default function RootLayout({
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-8 mb-12 border-b border-outline-variant/20 pb-12">
               <div className="flex flex-col gap-3">
                 <div className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-google-blue symbol-filled text-2xl">
-                    insights
-                  </span>
+                  <Image
+                    src="/sentinews-logo.jpg"
+                    alt="SentiNews AI"
+                    width={36}
+                    height={36}
+                    className="h-9 w-9 rounded-full object-cover"
+                  />
                   <span
-                    className={`${hankenGrotesk.className} font-headline-md text-2xl font-bold text-primary dark:text-primary tracking-tight`}
+                    className="font-headline-md text-2xl font-bold text-primary dark:text-primary tracking-tight"
                   >
                     SentiNews AI
                   </span>

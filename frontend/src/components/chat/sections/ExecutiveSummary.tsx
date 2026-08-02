@@ -1,26 +1,42 @@
-import { motion } from "framer-motion";
 import React from "react";
 import ReactMarkdown from "react-markdown";
+import type { Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { BarChart3, ExternalLink } from "lucide-react";
 
 interface ExecutiveSummaryProps {
-    result: any;
+    result: Record<string, unknown>;
 }
 
 const ExecutiveSummary: React.FC<ExecutiveSummaryProps> = ({ result }) => {
+    const data = (result?.data && typeof result.data === "object" ? result.data : {}) as Record<string, unknown>;
+    const meta = (result?.meta && typeof result.meta === "object" ? result.meta : {}) as Record<string, unknown>;
+    const sections = (result?.sections && typeof result.sections === "object" ? result.sections : {}) as Record<string, unknown>;
+    const fundamentalsSection = (
+        sections.fundamentals && typeof sections.fundamentals === "object"
+            ? sections.fundamentals
+            : {}
+    ) as Record<string, unknown>;
+    const fundamentalsData = (
+        fundamentalsSection.data && typeof fundamentalsSection.data === "object"
+            ? fundamentalsSection.data
+            : {}
+    ) as Record<string, unknown>;
+    const [nowMs] = React.useState(() => Date.now());
+
     const summary =
         result?.executive_summary ||
         result?.summary ||
         result?.report ||
-        result?.data?.executive_summary ||
-        result?.data?.summary ||
-        result?.data?.report ||
-        result?.sections?.fundamentals?.data?.summary ||
+        data.executive_summary ||
+        data.summary ||
+        data.report ||
+        fundamentalsData.summary ||
         "";
 
-    const ticker = result?.ticker || result?.meta?.ticker || "NIFTY";
+    const ticker = String(result?.ticker || meta.ticker || "NIFTY");
 
-    if (!summary.trim()) {
+    if (!String(summary).trim()) {
         return null;
     }
 
@@ -29,14 +45,15 @@ const ExecutiveSummary: React.FC<ExecutiveSummaryProps> = ({ result }) => {
         return raw.replace(/\\n/g, "\n");
     };
 
-    const getMetricVal = (m: any): any => {
+    const getMetricVal = (m: unknown): unknown => {
         if (m === null || m === undefined) return "";
         if (typeof m === 'object') {
-            if ('display_value' in m && m.display_value) {
-                return m.display_value;
+            const metric = m as Record<string, unknown>;
+            if (metric.display_value) {
+                return metric.display_value;
             }
-            if ('value' in m) {
-                return m.value;
+            if ('value' in metric) {
+                return metric.value;
             }
         }
         return m;
@@ -45,7 +62,7 @@ const ExecutiveSummary: React.FC<ExecutiveSummaryProps> = ({ result }) => {
     const getFreshnessBadge = (timestamp: string | null): { label: string; color: string } => {
         if (!timestamp || timestamp === "N/A") return { label: "STALE", color: "bg-red-500/10 text-red-400 border-red-500/20" };
         try {
-            const diffMs = Date.now() - new Date(timestamp).getTime();
+            const diffMs = nowMs - new Date(timestamp).getTime();
             const diffMins = diffMs / 1000 / 60;
             if (diffMins < 15) return { label: "LIVE", color: "bg-green-500/15 text-green-400 border-green-500/30 font-bold" };
             if (diffMins < 1440) return { label: "RECENT", color: "bg-blue-500/15 text-blue-400 border-blue-500/30 font-bold" };
@@ -55,11 +72,12 @@ const ExecutiveSummary: React.FC<ExecutiveSummaryProps> = ({ result }) => {
         }
     };
 
-    const getSourceLink = (metricObj: any, defaultSource: string, tickerStr: string): string | null => {
-        if (metricObj && typeof metricObj === 'object' && metricObj.source_url) {
-            return metricObj.source_url;
+    const getSourceLink = (metricObj: unknown, defaultSource: string, tickerStr: string): string | null => {
+        const metric = metricObj && typeof metricObj === 'object' ? metricObj as Record<string, unknown> : {};
+        if (typeof metric.source_url === "string" && metric.source_url) {
+            return metric.source_url;
         }
-        const source = (metricObj && typeof metricObj === 'object' && metricObj.source) || defaultSource;
+        const source = String(metric.source || defaultSource);
         if (!source || source === "N/A") return null;
         
         const cleanTicker = tickerStr.split(".")[0].toUpperCase();
@@ -69,9 +87,10 @@ const ExecutiveSummary: React.FC<ExecutiveSummaryProps> = ({ result }) => {
         return null;
     };
 
-    const getMissingReason = (name: string, metricObj: any): string => {
-        if (metricObj && typeof metricObj === 'object' && metricObj.reason) {
-            return metricObj.reason;
+    const getMissingReason = (name: string, metricObj: unknown): string => {
+        const metric = metricObj && typeof metricObj === 'object' ? metricObj as Record<string, unknown> : {};
+        if (typeof metric.reason === "string" && metric.reason) {
+            return metric.reason;
         }
         const lowercaseName = name.toLowerCase();
         if (lowercaseName.includes("peg") || lowercaseName.includes("pe ratio") || lowercaseName.includes("debt/equity")) {
@@ -87,6 +106,44 @@ const ExecutiveSummary: React.FC<ExecutiveSummaryProps> = ({ result }) => {
         { label: "Dividend Yield", key: "Dividend Yield" },
     ];
 
+    const keyStatistics = (
+        data.key_statistics && typeof data.key_statistics === "object"
+            ? data.key_statistics
+            : {}
+    ) as Record<string, unknown>;
+
+    const markdownComponents: Components = {
+        h1: ({ node: _node, ...props }) => <h1 className="text-3xl font-bold text-white mt-5 mb-3" {...props} />,
+        h2: ({ node: _node, ...props }) => <h2 className="text-2xl font-semibold text-white mt-5 mb-3" {...props} />,
+        h3: ({ node: _node, ...props }) => <h3 className="text-xl font-medium text-white mt-4 mb-2" {...props} />,
+        p: ({ node: _node, ...props }) => <p className="text-lg text-zinc-300 leading-8 mb-4" {...props} />,
+        ul: ({ node: _node, ...props }) => <ul className="list-disc list-inside text-lg text-zinc-300 space-y-2 ml-4 mb-5" {...props} />,
+        ol: ({ node: _node, ...props }) => <ol className="list-decimal list-inside text-lg text-zinc-300 space-y-2 ml-4 mb-5" {...props} />,
+        li: ({ node: _node, ...props }) => <li className="text-lg text-zinc-300 mb-1.5" {...props} />,
+        strong: ({ node: _node, ...props }) => <strong className="font-semibold text-white" {...props} />,
+        em: ({ node: _node, ...props }) => <em className="italic text-zinc-300" {...props} />,
+        code: ({ node: _node, className, children, ...props }) => {
+            const isInline = !className;
+            return isInline ? (
+                <code className="bg-zinc-800 text-zinc-200 px-1.5 py-0.5 rounded font-mono text-sm" {...props}>
+                    {children}
+                </code>
+            ) : (
+                <pre className="bg-zinc-800 text-zinc-200 p-4 rounded-lg overflow-x-auto font-mono text-sm my-3 border border-white/5">
+                    <code className={className} {...props}>
+                        {children}
+                    </code>
+                </pre>
+            );
+        },
+        table: ({ node: _node, ...props }) => <table className="w-full text-left border-collapse my-5 border border-zinc-700/50 text-lg" {...props} />,
+        thead: ({ node: _node, ...props }) => <thead className="bg-zinc-800/80 text-white font-semibold text-base border-b border-zinc-700" {...props} />,
+        tbody: ({ node: _node, ...props }) => <tbody className="divide-y divide-zinc-800 text-base text-zinc-300" {...props} />,
+        tr: ({ node: _node, ...props }) => <tr className="hover:bg-zinc-800/30 transition-colors" {...props} />,
+        th: ({ node: _node, ...props }) => <th className="px-4 py-2.5 font-semibold" {...props} />,
+        td: ({ node: _node, ...props }) => <td className="px-4 py-2.5" {...props} />,
+    };
+
     return (
         <div className="space-y-4">
             <h3 className="text-lg font-semibold text-zinc-400 tracking-wider uppercase mb-3">
@@ -95,55 +152,30 @@ const ExecutiveSummary: React.FC<ExecutiveSummaryProps> = ({ result }) => {
             <div className="prose prose-invert max-w-none text-lg text-zinc-300 prose-p:my-3 prose-p:text-lg prose-p:leading-8 prose-headings:mt-5 prose-headings:mb-3 prose-ul:my-3 prose-ol:my-3 prose-li:my-1 prose-li:text-lg prose-pre:my-4">
                 <ReactMarkdown
                     remarkPlugins={[remarkGfm]}
-                    components={{
-                        h1: ({ node, ...props }) => <h1 className="text-3xl font-bold text-white mt-5 mb-3" {...props} />,
-                        h2: ({ node, ...props }) => <h2 className="text-2xl font-semibold text-white mt-5 mb-3" {...props} />,
-                        h3: ({ node, ...props }) => <h3 className="text-xl font-medium text-white mt-4 mb-2" {...props} />,
-                        p: ({ node, ...props }) => <p className="text-lg text-zinc-300 leading-8 mb-4" {...props} />,
-                        ul: ({ node, ...props }) => <ul className="list-disc list-inside text-lg text-zinc-300 space-y-2 ml-4 mb-5" {...props} />,
-                        ol: ({ node, ...props }) => <ol className="list-decimal list-inside text-lg text-zinc-300 space-y-2 ml-4 mb-5" {...props} />,
-                        li: ({ node, ...props }) => <li className="text-lg text-zinc-300 mb-1.5" {...props} />,
-                        strong: ({ node, ...props }) => <strong className="font-semibold text-white" {...props} />,
-                        em: ({ node, ...props }) => <em className="italic text-zinc-300" {...props} />,
-                        code: ({ node, inline, ...props }: any) => 
-                            inline ? (
-                                <code className="bg-zinc-800 text-zinc-200 px-1.5 py-0.5 rounded font-mono text-sm" {...props} />
-                            ) : (
-                                <pre className="bg-zinc-800 text-zinc-200 p-4 rounded-lg overflow-x-auto font-mono text-sm my-3 border border-white/5">
-                                    <code {...props} />
-                                </pre>
-                            ),
-                        table: ({ node, ...props }) => <table className="w-full text-left border-collapse my-5 border border-zinc-700/50 text-lg" {...props} />,
-                        thead: ({ node, ...props }) => <thead className="bg-zinc-800/80 text-white font-semibold text-base border-b border-zinc-700" {...props} />,
-                        tbody: ({ node, ...props }) => <tbody className="divide-y divide-zinc-800 text-base text-zinc-300" {...props} />,
-                        tr: ({ node, ...props }) => <tr className="hover:bg-zinc-800/30 transition-colors" {...props} />,
-                        th: ({ node, ...props }) => <th className="px-4 py-2.5 font-semibold" {...props} />,
-                        td: ({ node, ...props }) => <td className="px-4 py-2.5" {...props} />,
-                    }}
+                    components={markdownComponents}
                 >
-                    {cleanText(summary)}
+                    {cleanText(String(summary))}
                 </ReactMarkdown>
             </div>
 
-            {result?.data?.key_statistics && Object.keys(result.data.key_statistics).length > 0 && (
+            {Object.keys(keyStatistics).length > 0 && (
                 <div className="mt-5 border-t border-zinc-800 pt-5">
                     <h4 className="text-xs font-mono uppercase tracking-widest font-extrabold text-zinc-400 mb-3 flex items-center gap-2">
-                        <span className="material-symbols-outlined text-blue-400 text-[16px]">
-                            dashboard
-                        </span>
+                        <BarChart3 className="h-4 w-4 text-blue-400" aria-hidden="true" />
                         Key Statistics Preview
                     </h4>
                     <div className="grid grid-cols-2 gap-3">
                         {compactMetrics.map((m, idx) => {
-                            const metricData = result.data?.key_statistics?.[m.key];
+                            const metricData = keyStatistics[m.key] as Record<string, unknown> | undefined;
                             const rawVal = getMetricVal(metricData);
                             const hasVal = rawVal !== null && rawVal !== undefined && rawVal !== "" && rawVal !== "N/A" && rawVal !== "Unavailable";
                             const val = hasVal ? String(rawVal) : "Unavailable";
                             const reason = hasVal ? "" : getMissingReason(m.label, metricData);
-                            const src = (metricData && typeof metricData === 'object' && metricData.source) || "N/A";
-                            const time = metricData?.timestamp && metricData.timestamp !== "N/A" ? new Date(metricData.timestamp).toLocaleDateString("en-IN", { hour: "2-digit", minute: "2-digit" }) : "N/A";
+                            const src = String(metricData?.source || "N/A");
+                            const timestamp = typeof metricData?.timestamp === "string" ? metricData.timestamp : "";
+                            const time = timestamp && timestamp !== "N/A" ? new Date(timestamp).toLocaleDateString("en-IN", { hour: "2-digit", minute: "2-digit" }) : "N/A";
                             const conf = metricData?.confidence !== undefined ? String(metricData.confidence) : "N/A";
-                            const badge = getFreshnessBadge(metricData?.timestamp || null);
+                            const badge = getFreshnessBadge(timestamp || null);
                             const sourceLink = getSourceLink(metricData, src, ticker);
 
                             return (
@@ -176,7 +208,7 @@ const ExecutiveSummary: React.FC<ExecutiveSummaryProps> = ({ result }) => {
                                                 {src}
                                                 {sourceLink && (
                                                     <a href={sourceLink} target="_blank" rel="noopener noreferrer" className="hover:text-blue-400 cursor-pointer inline-flex items-center">
-                                                        <span className="material-symbols-outlined text-[9px]">open_in_new</span>
+                                                        <ExternalLink className="h-3 w-3" aria-hidden="true" />
                                                     </a>
                                                 )}
                                             </span>

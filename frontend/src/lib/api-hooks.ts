@@ -12,7 +12,7 @@ const QUERY_CACHE_TIME = 10 * 60 * 1000; // 10 minutes
 /**
  * Hook for fetching market indices
  */
-export function useMarketIndices(): UseQueryResult<any> {
+export function useMarketIndices(): UseQueryResult<unknown> {
   return useQuery({
     queryKey: ["market", "indices"],
     queryFn: () => marketApi.getIndices(),
@@ -25,7 +25,7 @@ export function useMarketIndices(): UseQueryResult<any> {
 /**
  * Hook for fetching price history for a ticker
  */
-export function usePriceHistory(ticker: string | null): UseQueryResult<any> {
+export function usePriceHistory(ticker: string | null): UseQueryResult<unknown> {
   return useQuery({
     queryKey: ["market", "history", ticker],
     queryFn: () => marketApi.getPriceHistory(ticker!),
@@ -39,7 +39,7 @@ export function usePriceHistory(ticker: string | null): UseQueryResult<any> {
 /**
  * Hook for getting stock analysis
  */
-export function useStockAnalysis(symbol: string | null): UseQueryResult<any> {
+export function useStockAnalysis(symbol: string | null): UseQueryResult<unknown> {
   return useQuery({
     queryKey: ["analysis", "stock", symbol],
     queryFn: () => analysisApi.analyzeStock(symbol!),
@@ -53,7 +53,7 @@ export function useStockAnalysis(symbol: string | null): UseQueryResult<any> {
 /**
  * Hook for getting sentiment data
  */
-export function useSentiment(symbol: string | null): UseQueryResult<any> {
+export function useSentiment(symbol: string | null): UseQueryResult<unknown> {
   return useQuery({
     queryKey: ["analysis", "sentiment", symbol],
     queryFn: () => analysisApi.getSentiment(symbol!),
@@ -67,7 +67,7 @@ export function useSentiment(symbol: string | null): UseQueryResult<any> {
 /**
  * Hook for executing research query
  */
-export function useResearchQuery(query: string | null): UseQueryResult<any> {
+export function useResearchQuery(query: string | null): UseQueryResult<unknown> {
   return useQuery({
     queryKey: ["research", "query", query],
     queryFn: () => researchApi.executeQuery(query!),

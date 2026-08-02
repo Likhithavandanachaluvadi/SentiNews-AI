@@ -377,6 +377,70 @@ def _debug_query_understanding(
     )
 
 
+async def _discover_theme_companies_async(query: str) -> list:
+    """
+    Dynamically discovers top companies matching a theme/sector query from company_master.
+    Returns a list of dicts with company metadata (ticker, company_name, sector, industry, market_cap).
+    """
+    from src.database.session import async_session_factory
+    from src.models.company_master import CompanyMaster
+    from sqlalchemy import select, or_
+
+    query_clean = query.lower().strip()
+    stop_words = {
+        "top", "best", "companies", "company", "stocks", "stock", "shares", "share",
+        "in", "india", "indian", "sector", "industry", "theme", "analysis", "overview",
+        "of", "the", "for", "and", "or", "to", "a", "an", "list", "leading", "major"
+    }
+    words = [w for w in re.findall(r'\b[a-z0-9]+\b', query_clean) if w not in stop_words and len(w) >= 2]
+    if not words:
+        return []
+
+    try:
+        async with async_session_factory() as session:
+            filters = []
+            for term in words:
+                if term == "ai":
+                    filters.append(CompanyMaster.industry.ilike("%software%"))
+                    filters.append(CompanyMaster.industry.ilike("%technology%"))
+                    filters.append(CompanyMaster.industry.ilike("%artificial%"))
+                    filters.append(CompanyMaster.company_name.ilike("%ai %"))
+                elif term == "ev":
+                    filters.append(CompanyMaster.industry.ilike("%electric%"))
+                    filters.append(CompanyMaster.industry.ilike("%auto%"))
+                    filters.append(CompanyMaster.company_name.ilike("%ev %"))
+                else:
+                    filters.append(CompanyMaster.company_name.ilike(f"%{term}%"))
+                    filters.append(CompanyMaster.industry.ilike(f"%{term}%"))
+                    filters.append(CompanyMaster.sector.ilike(f"%{term}%"))
+
+            stmt = (
+                select(CompanyMaster)
+                .where(or_(*filters))
+                .order_by(CompanyMaster.market_cap.desc().nulls_last())
+                .limit(5)
+            )
+            res = await session.execute(stmt)
+            companies = res.scalars().all()
+
+            results = []
+            for c in companies:
+                results.append({
+                    "ticker": c.symbol,
+                    "name": c.company_name,
+                    "company_name": c.company_name,
+                    "sector": c.sector or "Technology",
+                    "industry": c.industry or "General",
+                    "market_cap": f"₹{c.market_cap / 10000000:,.2f} Cr" if c.market_cap else "N/A",
+                    "stock_pe": "N/A",
+                    "roe": "N/A"
+                })
+            return results
+    except Exception as e:
+        logger.warning(f"Dynamic theme company discovery failed: {e}")
+        return []
+
+
 async def dynamic_retriever_node(state: dict) -> dict:
     """
     Intent-aware LangGraph node for data retrieval.
@@ -461,7 +525,17 @@ async def dynamic_retriever_node(state: dict) -> dict:
 
     # Pre-retrieval Validation Layer
     from src.services.entity_resolver import EntityResolver, EntityResolutionError, log_entity_validation
-    req_ticker, req_company = EntityResolver.resolve_sync(query) if ticker else (None, None)
+    resolved_entities_dict = state.get("resolved_entities")
+    req_ticker = None
+    req_company = None
+    if resolved_entities_dict:
+        from src.services.entity_models import EntityCollection
+        collection = EntityCollection.from_dict(resolved_entities_dict)
+        if not collection.is_empty and collection.primary:
+            req_ticker = collection.primary_ticker
+            req_company = collection.primary.company_name
+    elif ticker:
+        req_ticker, req_company = EntityResolver.resolve_sync(query)
     if req_ticker and ticker != req_ticker:
         log_entity_validation(
             query=query,
@@ -708,6 +782,30 @@ async def dynamic_retriever_node(state: dict) -> dict:
             grounding_data = await get_grounding_data(ticker)
         except Exception as e:
             logger.error(f"Failed to fetch grounding data for {ticker}: {e}")
+    elif primary_intent == "THEME_ANALYSIS":
+        discovered_peers = await _discover_theme_companies_async(query)
+        if discovered_peers:
+            from src.agents.schemas import GroundingPeerItem
+            peer_items = [
+                GroundingPeerItem(
+                    ticker=p["ticker"],
+                    name=p["name"],
+                    market_cap=p["market_cap"],
+                    stock_pe=p.get("stock_pe", "N/A"),
+                    roe=p.get("roe", "N/A")
+                ) for p in discovered_peers
+            ]
+            grounding_data = {
+                "ticker": None,
+                "company_name": f"Theme: {query}",
+                "peers": peer_items,
+                "discovered_companies": [p["ticker"] for p in discovered_peers],
+                "sector": query,
+            }
+            peer_context = ["TOP DISCOVERED THEME BENEFICIARIES:"]
+            for p in discovered_peers:
+                peer_context.append(f"- {p['name']} ({p['ticker']}): Industry={p['industry']}, Sector={p['sector']}, Market Cap={p['market_cap']}")
+            context = peer_context + context
 
     # Generate unified prompt context using PromptContextBuilder
     from src.services.prompt_context_builder import PromptContextBuilder

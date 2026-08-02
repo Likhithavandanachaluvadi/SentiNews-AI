@@ -189,8 +189,8 @@ class ResponsePlanner:
         "required_data": {"market": False, "financials": False, "news": True},
         "sections": [
             "Executive Summary", "Theme Overview",
-            "Technology Trends", "Industry Adoption", "Market Sentiment",
-            "Conclusion"
+            "Technology Trends", "Industry Adoption", "Research Context",
+            "Market Drivers", "Key Risks"
         ],
         "ui_blocks": ["TechnologyTrends", "Adoption", "Research", "Citations"],
     }

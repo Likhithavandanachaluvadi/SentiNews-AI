@@ -130,9 +130,16 @@ async def analyze_stock(
         # Get or create conversation context
         conversation = conversation_manager.get_or_create_conversation(req_data.conversation_id)
 
-        # Validate domain for every request using Financial Domain Guard (first message and follow-ups)
+        # Invoke structured router/classifier first to get expanded query and resolved entities
+        resolved = await conversation_manager.resolve_query_intent(conversation.conversation_id, query_val)
+        
+        ticker = resolved.resolved_ticker or conversation.ticker
+        query = resolved.resolved_query
+        resolved_entities = resolved.resolved_entities
+
+        # Validate domain using Financial Domain Guard with the contextually expanded query and resolved entities
         from src.core.domain_guard import FinancialDomainGuard
-        domain_result = FinancialDomainGuard.validate(query_val)
+        domain_result = FinancialDomainGuard.validate(query, resolved_entities=resolved_entities)
         if not domain_result.allowed:
             refusal_text = (
                 "I'm SentiNews AI, a financial research assistant specialized in stock markets and financial analysis.\n\n"
@@ -155,6 +162,7 @@ async def analyze_stock(
                 role="user",
                 content=req_data.query,
                 ticker="N/A",
+                resolved_entities=resolved_entities,
             )
             conversation_manager.save_message(
                 conversation_id=conversation.conversation_id,
@@ -163,6 +171,7 @@ async def analyze_stock(
                 ticker="N/A",
                 intent="GENERALIZED",
                 last_summary=refusal_text,
+                resolved_entities=resolved_entities,
             )
             
             from src.agents.schemas import UnifiedResponseEnvelope, IntentMeta, ResponseMeta
@@ -228,12 +237,6 @@ async def analyze_stock(
                 }
             )
             return envelope.model_dump()
-
-        # Invoke structured router/classifier
-        resolved = await conversation_manager.resolve_query_intent(conversation.conversation_id, query_val)
-        
-        ticker = resolved.resolved_ticker or conversation.ticker
-        query = resolved.resolved_query
             
         user_email = current_user.email if current_user else "guest"
         logger.info(f"Analysis request: conversation_id={conversation.conversation_id}, ticker={ticker}, user={user_email}")
@@ -258,7 +261,7 @@ async def analyze_stock(
             "iteration_count": 0,
             "final_report": {},
             "execution_logs": [],
-            "resolved_entities": resolved.resolved_entities,
+            "resolved_entities": resolved_entities,
         })
 
         generation_time_ms = int((time.time() - start_time) * 1000)

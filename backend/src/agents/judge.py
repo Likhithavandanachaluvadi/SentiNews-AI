@@ -30,7 +30,6 @@ logger = logging.getLogger(__name__)
 TICKERLESS_JUDGE_INTENTS = {
     "EDUCATIONAL",
     "SECTOR_OUTLOOK",
-    "THEME_ANALYSIS",
     "MARKET_OVERVIEW",
     "RESTRICTED_ADVISORY",
 }
@@ -254,6 +253,215 @@ Before writing any output field, execute the Pre-Writing Synthesis Protocol abov
 5. Write executive_summary as a unified, contradiction-aware narrative explaining what is happening, why, opportunities, and risks.
 
 Never copy any analyst sentence verbatim. Always reinterpret, connect, and synthesize.
+
+========================================================
+VERIFIED GROUNDING CONTEXT
+========================================================
+{grounding_context}
+
+========================================================
+TOP PEERS COMPARISON
+========================================================
+{peer_summary}
+
+========================================================
+EXPERT REPORTS
+========================================================
+
+FUNDAMENTAL ANALYST REPORT:
+{fundamental_report}
+
+TECHNICAL ANALYST REPORT:
+{technical_report}
+
+SENTIMENT ANALYST REPORT:
+{sentiment_report}
+
+VERIFIER FEEDBACK:
+{verifier_feedback}
+
+User Query: {query}""")
+])
+
+news_judge_prompt = ChatPromptTemplate.from_messages([
+    ("system", """You are an Elite Institutional Equity Research Analyst (e.g., Bloomberg, Morningstar, Reuters calibre) and Principal Financial Advisor.
+Format the response as a JSON object matching the FinalEducationalReport schema.
+Your goal is to produce a highly structured, professional news analysis report.
+
+========================================================
+INTERNAL ANALYSIS PROTOCOL
+========================================================
+Before generating the final JSON output, internally execute the following analysis steps:
+1. Identify the primary news catalyst.
+2. Determine why it happened.
+3. Evaluate why it matters.
+4. Rank the available evidence.
+5. Remove duplicate information.
+6. Organize the final response before generation.
+Do NOT output this protocol, any Chain-of-Thought reasoning, or internal thought process metadata in the final response. Output only the structured JSON payload.
+
+========================================================
+EVIDENCE PRIORITY HIERARCHY
+========================================================
+When multiple retrieved sources are available, prioritize them in the following order:
+1. Official company filings or announcements
+2. Earnings reports and investor presentations
+3. Regulatory announcements
+4. Management commentary
+5. Analyst reports
+6. Reputable financial news sources
+7. Ignore duplicate reporting and low-information articles
+The response must be built around the highest-confidence evidence from the top of this hierarchy rather than averaging all retrieved articles together.
+
+========================================================
+CONCRETE FACTS REQUIREMENT
+========================================================
+Every factual statement must be supported by retrieved evidence. Focus on:
+- Specific numbers, percentages, and dates
+- Management comments or analyst notes
+- Precise earnings results, regulatory actions, partnerships, and acquisitions
+Avoid abstract summaries or non-specific generalizations.
+
+========================================================
+BANNED GENERIC PHRASES & MISSING DATA RULES
+========================================================
+You are absolutely forbidden from using any of the following generic placeholder phrases in your output. They must NEVER appear in the generated report under any circumstances:
+- market activity
+- recent developments
+- price fluctuations
+- investor sentiment
+- current market conditions
+- volatility
+- price movement
+- recent activity
+
+Instead, you must ALWAYS replace them with the actual specific event, metric, or concrete term (e.g., use "share price changes", "FII selling", "global market weakness", "trading volume growth", "earnings results").
+
+If the retrieved sources or expert reports do not contain a specific, concrete news catalyst (e.g., no specific earnings numbers, regulatory announcements, leadership changes, partnerships, or acquisitions), you MUST explicitly state in the Executive Summary:
+"No verified recent news catalysts or specific corporate developments were identified in the retrieved sources for the company."
+You are absolutely forbidden from fabricating generic explanations when specific news is missing. Replace all generic wording with the actual concrete event when it is available, otherwise state it is unavailable.
+
+========================================================
+CRITICAL SECTION BOUNDARIES & DEDUPLICATION
+========================================================
+You must populate the `executive_summary` field strictly using the following seven-section markdown structure. Do not alter the headings, do not add extra top-level headings, and always output all 7 sections in this exact order.
+To ensure high quality, each section must contain unique information; do not repeat paragraphs or duplicate sentences across sections. The Executive Summary must not be repeated later in the report.
+
+# Executive Summary
+- Purpose: Immediately answer the user's question.
+- Requirements:
+  * First paragraph must directly answer the query.
+  * State the primary news catalyst.
+  * Limit to 2–3 concise sentences.
+  * Do not introduce the company (e.g., do NOT start the first sentence with the company's name or phrases like "[Company] is in the news" or "HDFC Bank is..."). Start directly with the core event or catalyst (e.g. "Recent stock price changes and increased trading volume are driven by...", "Key leadership changes have...").
+  * Do not begin with market sentiment.
+
+# Why is the Company in the News?
+- Purpose: Explain the primary business catalyst.
+- Requirements:
+  * Explain WHY the catalyst occurred.
+  * Explain the business impact of this event.
+  * Do not repeat the Executive Summary.
+  * Limit to 1–2 short paragraphs.
+
+# Key Developments
+- Purpose: Summarize the major factual developments.
+- Requirements:
+  * 3–5 unique factual bullet points (chronological if possible).
+  * Explain why each development matters.
+  * Synthesize information instead of copying articles.
+
+# Market Impact
+- Purpose: Explain the market reaction.
+- Requirements:
+  * Mention stock movement only when verified in the retrieved evidence.
+  * Explain investor reaction using retrieved evidence.
+  * If no verified market reaction exists, explicitly state that (e.g., "No verified short-term market reaction was identified in the retrieved sources.").
+  * Limit to 1 short paragraph.
+
+# Overall Sentiment
+- Purpose: Summarize overall sentiment.
+- Requirements:
+  * Classify as exactly one of: Positive, Neutral, Negative.
+  * Provide a brief evidence-based explanation.
+  * Limit to 1–2 sentences.
+
+# Key Risks
+- Purpose: Highlight evidence-supported risks.
+- Requirements:
+  * Highlight risks supported by retrieved evidence (examples: regulatory risk, margin pressure, competition, operational challenges, macroeconomic uncertainty).
+  * Avoid generic investment warnings.
+  * Limit to 2–3 bullet points.
+
+# Key Takeaway
+- Purpose: Provide a concise analyst conclusion.
+- Requirements:
+  * Summarize: what happened, why it matters, and what readers should remember.
+  * Limit to 2–3 sentences.
+  * Remain educational.
+  * Do not provide Buy/Sell/Hold recommendations.
+  * Do not repeat previous paragraphs.
+
+========================================================
+WRITING STYLE GUIDELINES
+========================================================
+- Calibre: Bloomberg, Morningstar, or Reuters Equity Research analyst.
+- Tone: Professional, objective, analytical, active voice.
+- Prohibited Intros: Do NOT start with "The company...", "[Company Name] is...", "According to the data...", "In today's market...".
+- Structure: Clear structure, short paragraphs, bullet points where appropriate, no filler, no repetition.
+
+========================================================
+HALLUCINATION PREVENTION
+========================================================
+Never invent any events, prices, analyst opinions, market reactions, or numbers. If evidence is missing, state clearly that it is unavailable.
+
+========================================================
+EXAMPLE JSON STRUCTURE (Do NOT wrap in any root key)
+========================================================
+{{
+  "outlook_label": "Neutral Outlook",
+  "conviction_level": "Low Confidence Scenario",
+  "executive_summary": "# Executive Summary\\n[Content - direct answer, 2-3 sentences]\\n\\n# Why is the Company in the News?\\n[Content - business explanation and impact, 1-2 paragraphs]\\n\\n# Key Developments\\n* [Chronological event 1 with details and why it matters]\\n* [Chronological event 2 with details and why it matters]\\n* [Chronological event 3 with details and why it matters]\\n\\n# Market Impact\\n[Content - verified stock response or 'No verified short-term market reaction was identified in the retrieved sources.']\\n\\n# Overall Sentiment\\nNeutral. [Reasoning based on verified evidence]\\n\\n# Key Risks\\n* [Evidence-supported risk 1]\\n* [Evidence-supported risk 2]\\n\\n# Key Takeaway\\n[Content - educational takeaway, 2-3 sentences]",
+  "company_name": "TICKER",
+  "company_overview": "Brief overview.",
+  "investment_thesis": [
+    "Key driver 1",
+    "Key driver 2"
+  ],
+  "fundamental_synthesis": "Fundamental synthesis.",
+  "technical_synthesis": "Technical synthesis.",
+  "sentiment_synthesis": "Sentiment synthesis.",
+  "scenario_analysis": {{
+    "bull_case": "Optimistic case details.",
+    "base_case": "Most likely details.",
+    "bear_case": "Pessimistic details."
+  }},
+  "risk_analysis": [
+    "Major risk 1",
+    "Major risk 2"
+  ],
+  "data_freshness": "2026-07-17T12:00:00Z",
+  "overall_confidence_score": 50,
+  "sebi_disclaimer": "This is AI-generated educational research for informational purposes only. It does NOT constitute SEBI-registered investment advice."
+}}
+
+========================================================
+OUTPUT RULES
+========================================================
+Return ONLY a valid JSON object matching the FinalEducationalReport schema.
+The JSON keys must be at the root of the object.
+CRITICAL: Do NOT wrap the JSON inside a "final_educational_report" key or any other wrapper key.
+Do not return markdown outside the JSON. Do not return explanations.
+Populate every required field. Enums must exactly match the schema.
+"""),
+    ("user", """QUERY INTENT:
+Primary Intent: {primary_intent}
+Secondary Intent: {secondary_intent}
+
+========================================================
+RETRIEVED NEWS ARTICLES (RAW SOURCE EVIDENCE)
+========================================================
+{retrieved_news}
 
 ========================================================
 VERIFIED GROUNDING CONTEXT
@@ -605,19 +813,29 @@ def _build_peer_summary(state: ResearchState) -> str:
     if not peers:
         return "No peer comparison data available."
     
-    lines = ["TOP PEERS COMPARISON (Top 3):"]
-    for peer in peers[:3]:
+    lines = ["TOP BENEFICIARY COMPANIES / PEERS COMPARISON:"]
+    for peer in peers[:5]:
         if isinstance(peer, dict):
             ticker = peer.get("ticker", "N/A")
             name = peer.get("name", "N/A")
             pe = peer.get("stock_pe", "N/A")
             roe = peer.get("roe", "N/A")
+            mcap = peer.get("market_cap", "N/A")
         else:
             ticker = getattr(peer, "ticker", "N/A")
             name = getattr(peer, "name", "N/A")
             pe = getattr(peer, "stock_pe", "N/A")
             roe = getattr(peer, "roe", "N/A")
-        lines.append(f"- {name} ({ticker}): P/E = {pe}, ROE = {roe}")
+            mcap = getattr(peer, "market_cap", "N/A")
+        details = []
+        if mcap != "N/A":
+            details.append(f"Market Cap = {mcap}")
+        if pe != "N/A":
+            details.append(f"P/E = {pe}")
+        if roe != "N/A":
+            details.append(f"ROE = {roe}")
+        details_str = ", ".join(details) if details else "N/A"
+        lines.append(f"- {name} ({ticker}): {details_str}")
         
     return "\n".join(lines)
 
@@ -647,11 +865,18 @@ async def judge_node(state: ResearchState) -> dict:
         return {"final_report": _tickerless_final_report(state, primary_intent)}
 
     # Safety Validation: Verify requested ticker matches retrieved ticker before synthesis
-    from src.services.entity_resolver import EntityResolver
-    query = state.get("query", "")
-    requested_ticker, _ = EntityResolver.resolve_sync(query)
+    resolved_entities_dict = state.get("resolved_entities")
+    requested_ticker = None
+    if resolved_entities_dict:
+        from src.services.entity_models import EntityCollection
+        collection = EntityCollection.from_dict(resolved_entities_dict)
+        if not collection.is_empty and collection.primary:
+            requested_ticker = collection.primary_ticker
+    elif state.get("query"):
+        from src.services.entity_resolver import EntityResolver
+        requested_ticker, _ = EntityResolver.resolve_sync(state["query"])
     
-    if requested_ticker and retrieved_ticker and requested_ticker.upper() != retrieved_ticker:
+    if primary_intent != "THEME_ANALYSIS" and requested_ticker and retrieved_ticker and requested_ticker.upper() != retrieved_ticker:
         logger.warning(f"Judge: Mismatch between requested '{requested_ticker}' and retrieved '{retrieved_ticker}'")
         mismatch_msg = "Unable to verify requested company due to ticker resolution mismatch."
         return {
@@ -763,7 +988,11 @@ async def judge_node(state: ResearchState) -> dict:
         sections_layout_instruction = "\n".join(f"### {sec}" for sec in sections)
 
         structured_llm = llm.with_structured_output(FinalEducationalReport, method="json_mode")
-        chain = judge_prompt | structured_llm
+        is_news_query = (primary_intent == "NEWS_ANALYSIS") or (secondary_intent == "NEWS")
+        if is_news_query:
+            chain = news_judge_prompt | structured_llm
+        else:
+            chain = judge_prompt | structured_llm
         logger.info("=" * 80)
         logger.info("JUDGE INPUT")
         logger.info("=" * 80)
@@ -783,6 +1012,18 @@ async def judge_node(state: ResearchState) -> dict:
         logger.info(f"PEER SUMMARY:\n{peer_summary}\n")
 
         logger.info("=" * 80)
+        # Format retrieved news articles for prompt grounding
+        retrieved_news_str = ""
+        news_articles = state.get("news_articles") or []
+        for idx, art in enumerate(news_articles, 1):
+            title = art.get("title", "")
+            desc = art.get("description", "")
+            src = art.get("source", "") or art.get("provider", "")
+            date = art.get("published_at", "") or art.get("date", "")
+            retrieved_news_str += f"{idx}. [{date}] Source: {src} - Title: {title}\n   Summary: {desc}\n\n"
+        if not retrieved_news_str:
+            retrieved_news_str = "No retrieved news articles available."
+
         report: FinalEducationalReport = await chain.ainvoke({
             "fundamental_report": fund_report_json,
             "technical_report": tech_report_json,
@@ -794,6 +1035,7 @@ async def judge_node(state: ResearchState) -> dict:
             "primary_intent": primary_intent,
             "secondary_intent": secondary_intent,
             "sections_layout_instruction": sections_layout_instruction,
+            "retrieved_news": retrieved_news_str,
         })
         logger.info("=" * 80)
         logger.info("JUDGE OUTPUT")
@@ -818,6 +1060,8 @@ async def judge_node(state: ResearchState) -> dict:
             fund_report, tech_report, sent_report, fund_populated, tech_populated, sent_populated
         )
         
+        if primary_intent == "THEME_ANALYSIS":
+            report.company_name = f"Theme: {query}"
         report.overall_confidence_score = overall_conf
         report.data_freshness = datetime.utcnow().isoformat()
         # NOTE: peer_comparison is built by response_builder from grounding_data.peers.

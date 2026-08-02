@@ -5,18 +5,28 @@ Production security middleware:
 - Input validation & sanitization
 - Comprehensive error handling
 """
+# pyrefly: ignore [missing-import]
 from fastapi import Depends, HTTPException, status
+# pyrefly: ignore [missing-import]
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+# pyrefly: ignore [missing-import]
 from sqlalchemy.ext.asyncio import AsyncSession
+# pyrefly: ignore [missing-import]
 from sqlalchemy import select
+# pyrefly: ignore [missing-import]
 from src.database.session import get_session
+# pyrefly: ignore [missing-import]
 from src.models.user import User
 from src.core.security import verify_token
+# pyrefly: ignore [missing-import]
 from jose import JWTError
 from typing import Optional
 import logging
+# pyrefly: ignore [missing-import]
 from slowapi import Limiter
+# pyrefly: ignore [missing-import]
 from slowapi.util import get_remote_address
+# pyrefly: ignore [missing-import]
 from slowapi.errors import RateLimitExceeded
 
 logger = logging.getLogger(__name__)
@@ -150,6 +160,51 @@ async def validate_ticker(ticker: str) -> str:
     
     return ticker
 
+def clean_and_filter_entities(entities: list) -> set:
+    import re
+    financial_action_words = {
+        "buy", "sell", "invest", "investing", "hold", "purchase", "recommend",
+        "should i", "should", "would", "could", "investor", "investors", "portfolio",
+        "why", "what", "how", "when", "where", "who", "which", "is", "are", "was",
+        "were", "be", "been", "being", "have", "has", "had", "do", "does", "did",
+        "but", "if", "or", "and", "the", "a", "an", "now", "today", "yesterday",
+        "tomorrow", "stock", "share", "shares", "price", "prices", "market", "markets",
+        "trend", "trends", "growth", "perform", "performance", "analysis",
+        "news", "risk", "risks", "value", "valuation", "fundamentals", "technical",
+        "i", "me", "my", "to", "can", "will", "may", "must"
+    }
+    
+    unique_tickers = set()
+    for entity in entities:
+        if hasattr(entity, "ticker"):
+            ticker = entity.ticker
+        elif isinstance(entity, dict):
+            ticker = entity.get("ticker", "")
+        else:
+            ticker = getattr(entity, "ticker", "")
+            
+        if hasattr(entity, "query_span"):
+            query_span = entity.query_span
+        elif isinstance(entity, dict):
+            query_span = entity.get("query_span", "")
+        else:
+            query_span = getattr(entity, "query_span", "")
+            
+        ticker = ticker.upper().strip() if ticker else ""
+        query_span = query_span.lower().strip() if query_span else ""
+        
+        # Check if query_span consists entirely of ignored words
+        span_tokens = [w for w in re.findall(r'\b[a-z]+\b', query_span) if w]
+        is_ignored = all(t in financial_action_words for t in span_tokens) if span_tokens else True
+        
+        if query_span in financial_action_words:
+            is_ignored = True
+            
+        if ticker and not is_ignored:
+            unique_tickers.add(ticker)
+            
+    return unique_tickers
+
 async def validate_query(query: str, max_length: int = 500, check_multiple_companies: bool = True) -> str:
     """
     Validate and sanitize user query.
@@ -179,13 +234,18 @@ async def validate_query(query: str, max_length: int = 500, check_multiple_compa
         cleaned_query = cleaned_query.replace(connector, " | ")
     
     segments = [s.strip() for s in cleaned_query.split("|") if s.strip()]
-    matched_tickers = set()
+    entities = []
     from src.services.entity_resolver import EntityResolver
     for seg in segments:
         resolved_ticker, _ = EntityResolver.resolve_sync(seg)
         if resolved_ticker:
-            matched_tickers.add(resolved_ticker)
+            entities.append({
+                "ticker": resolved_ticker,
+                "query_span": seg
+            })
             
+    matched_tickers = clean_and_filter_entities(entities)
+    
     # Check for comparison indicators with one or more matched tickers
     comparison_indicators = [" vs ", " versus ", " compare ", " comparison ", " compared to "]
     has_comparison_word = any(indicator in query_lower for indicator in comparison_indicators)
@@ -206,7 +266,7 @@ def validate_query_multiple_companies(query: str, intent: str, entity_collection
     if entity_collection:
         from src.services.entity_models import EntityCollection
         collection = EntityCollection.from_dict(entity_collection)
-        num_companies = len(collection.entities)
+        entities = collection.entities
     else:
         query_lower = query.lower()
         cleaned_query = query_lower
@@ -214,14 +274,18 @@ def validate_query_multiple_companies(query: str, intent: str, entity_collection
             cleaned_query = cleaned_query.replace(connector, " | ")
         
         segments = [s.strip() for s in cleaned_query.split("|") if s.strip()]
-        matched_tickers = set()
+        entities = []
         from src.services.entity_resolver import EntityResolver
         for seg in segments:
             resolved_ticker, _ = EntityResolver.resolve_sync(seg)
             if resolved_ticker:
-                matched_tickers.add(resolved_ticker)
+                entities.append({
+                    "ticker": resolved_ticker,
+                    "query_span": seg
+                })
                 
-        num_companies = len(matched_tickers)
+    matched_tickers = clean_and_filter_entities(entities)
+    num_companies = len(matched_tickers)
         
     logger.info(f"validate_query_multiple_companies: intent={intent}, matched_companies={num_companies}")
     

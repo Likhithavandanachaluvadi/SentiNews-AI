@@ -22,7 +22,7 @@ import time
 from src.core.config import settings
 from src.database.session import init_db, close_db
 from src.core.middleware import limiter, handle_rate_limit_exceeded
-from src.api.v1.endpoints import auth, analysis, market
+from src.api.v1.endpoints import auth, analysis, market, features
 
 # ============================================================================
 # LOGGING CONFIGURATION
@@ -161,7 +161,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     )
 
 @app.exception_handler(Exception)
-async def general_exception_handler(request: Request, exc: Exception):
+async def general_exception_handler(request: Request, exc: RequestValidationError):
     """Catch-all error handler for unexpected errors."""
     logger.error(f"Unhandled exception: {exc}", exc_info=True)
     return JSONResponse(
@@ -194,7 +194,6 @@ async def readiness_check() -> Dict[str, Any]:
     Returns 503 if not ready, 200 if ready.
     """
     try:
-        # Check database connection
         from sqlalchemy import text
         from src.database.session import engine
         
@@ -228,6 +227,7 @@ async def readiness_check() -> Dict[str, Any]:
 app.include_router(auth.router)
 app.include_router(analysis.router)
 app.include_router(market.router)
+app.include_router(features.router)
 
 # ============================================================================
 # ROOT ENDPOINT
@@ -248,6 +248,7 @@ async def root() -> Dict[str, Any]:
             "readiness": "/health/ready",
             "auth": "/api/v1/auth",
             "research": "/api/v1/research",
+            "features": "/api/features/public",
         }
     }
 

@@ -1,6 +1,6 @@
 import pytest
 import asyncio
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, AsyncMock
 from src.services.entity_models import ResolvedEntity, EntityCollection
 from src.services.entity_resolution_pipeline import EntityResolutionPipeline
 from src.services.entity_resolver import EntityResolver, EntityResolutionError
@@ -51,6 +51,12 @@ def test_match_candidate_exact_name():
     assert entity is not None
     assert entity.ticker == "TCS"
     assert entity.resolution_source == "EXACT_NAME"
+
+def test_match_candidate_normalized_industry_alias():
+    entity = EntityResolutionPipeline._match_candidate("Sun Pharma")
+    assert entity is not None
+    assert entity.ticker == "SUNPHARMA"
+    assert entity.resolution_source == "EXACT_NAME"
     
     # exact name match
     entity = EntityResolutionPipeline._match_candidate("tata consultancy services")
@@ -72,6 +78,36 @@ def test_fuzzy_match():
     assert entity.ticker == "INFY"
     assert entity.resolution_source == "FUZZY_MATCH"
     assert entity.confidence >= 0.80
+
+def test_common_sentence_word_does_not_resolve_as_ticker():
+    EntityResolver._ticker_to_company["CAN"] = "Canaan Inc."
+    EntityResolver._company_to_ticker["canaan inc."] = "CAN"
+
+    q = (
+        "I'm a beginner investor. I noticed HDFC Bank shares have been in the news "
+        "recently. Can you explain what happened, why it's important, and whether "
+        "this could affect the bank's long-term business?"
+    )
+
+    col = EntityResolutionPipeline.resolve_entities_sync(q, intent="NEWS_ANALYSIS")
+
+    assert col.total_found == 1
+    assert col.primary_ticker == "HDFCBANK"
+    assert "CAN" not in col.all_tickers
+
+def test_common_modal_words_are_not_discovered_as_companies():
+    for word in ["Can", "Will", "May"]:
+        assert EntityResolutionPipeline._classify_candidate(word, f"{word} you explain HDFC Bank?") == "generic_phrase"
+    assert EntityResolutionPipeline._classify_candidate("May I", "May I know latest Reliance news?") == "generic_phrase"
+
+def test_explicit_uppercase_common_word_ticker_still_resolves():
+    EntityResolver._ticker_to_company["CAN"] = "Canaan Inc."
+    EntityResolver._company_to_ticker["canaan inc."] = "CAN"
+
+    assert EntityResolutionPipeline._classify_candidate("CAN", "Analyze CAN stock") == "ticker"
+    entity = EntityResolutionPipeline._match_candidate("CAN")
+    assert entity is not None
+    assert entity.ticker == "CAN"
 
 def test_rank_and_deduplicate():
     e1 = ResolvedEntity(
@@ -202,6 +238,9 @@ def test_yahoo_discovery_sync(mock_yahoo_search):
 @patch("src.services.entity_resolver.EntityResolver._search_yahoo_finance_async")
 @patch("src.services.entity_resolver.EntityResolver._persist_new_company")
 async def test_resolve_entities_async(mock_persist, mock_yahoo_search):
+    async def initialize_without_db(*args, **kwargs):
+        EntityResolver.initialize_sync()
+
     mock_yahoo_search.return_value = {
         "symbol": "AAPL",
         "company_name": "Apple Inc.",
@@ -211,8 +250,9 @@ async def test_resolve_entities_async(mock_persist, mock_yahoo_search):
     
     EntityResolutionPipeline._yahoo_lru_cache.clear()
     
-    # Async resolution of Apple
-    col = await EntityResolutionPipeline.resolve_entities("Analyze Apple")
+    # Async resolution of an unknown title-case company should use Yahoo discovery.
+    with patch.object(EntityResolver, "initialize_async", new=AsyncMock(side_effect=initialize_without_db)):
+        col = await EntityResolutionPipeline.resolve_entities("Analyze Example Robotics")
     assert col.total_found == 1
     assert col.primary_ticker == "AAPL"
     assert col.primary.resolution_source == "YAHOO_FINANCE"

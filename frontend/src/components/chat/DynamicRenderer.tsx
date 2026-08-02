@@ -1,6 +1,7 @@
 import React from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { ListTree } from "lucide-react";
 import AssistantMessage from "./AssistantMessage";
 
 interface DynamicRendererProps {
@@ -248,9 +249,7 @@ const DynamicRenderer: React.FC<DynamicRendererProps> = ({ result }) => {
           return (
             <section key={block} className="rounded-xl border border-white/10 bg-white/[0.025] p-5">
               <h3 className="mb-3 flex items-center gap-2 text-base font-semibold uppercase tracking-wider text-zinc-400">
-                <span className="material-symbols-outlined text-[18px] text-blue-300">
-                  segment
-                </span>
+                <ListTree className="h-4 w-4 text-blue-300" aria-hidden="true" />
                 {config.title}
               </h3>
               <div className="prose prose-invert max-w-none">
