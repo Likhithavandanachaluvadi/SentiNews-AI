@@ -33,6 +33,10 @@ export interface SourceItem {
 }
 
 const TEXT_FIELDS: Record<string, { title: string; keys: string[] }> = {
+  ExecutiveSummary: {
+    title: "Executive Summary",
+    keys: ["executive_summary", "summary"],
+  },
   EducationalExplainer: {
     title: "Explanation",
     keys: ["educational_explanation", "summary"],
@@ -73,6 +77,10 @@ const TEXT_FIELDS: Record<string, { title: string; keys: string[] }> = {
     title: "Movement Drivers",
     keys: ["movement_summary", "recent_catalysts"],
   },
+  TechnicalCard: {
+    title: "Technical Analysis",
+    keys: ["technical_analysis", "technicals", "trend_analysis", "momentum"],
+  },
   TechnicalMomentum: {
     title: "Technical Context",
     keys: ["technical_analysis", "technicals", "momentum"],
@@ -80,6 +88,22 @@ const TEXT_FIELDS: Record<string, { title: string; keys: string[] }> = {
   FundamentalCard: {
     title: "Fundamentals",
     keys: ["fundamentals", "company_overview"],
+  },
+  SentimentCard: {
+    title: "Sentiment Analysis",
+    keys: ["sentiment", "sentiment_analysis"],
+  },
+  SentimentMeter: {
+    title: "Sentiment",
+    keys: ["sentiment", "sentiment_analysis"],
+  },
+  ScenarioCards: {
+    title: "Scenario Analysis",
+    keys: ["scenario_analysis", "scenarios"],
+  },
+  ConfidenceGauge: {
+    title: "Confidence",
+    keys: ["confidence", "conviction"],
   },
   RiskFactors: {
     title: "Risks",
@@ -100,6 +124,26 @@ const TEXT_FIELDS: Record<string, { title: string; keys: string[] }> = {
   SentimentPulse: {
     title: "Sentiment",
     keys: ["sentiment"],
+  },
+  BasicExplainer: {
+    title: "Overview",
+    keys: ["executive_summary", "summary", "educational_explanation"],
+  },
+  RelatedContent: {
+    title: "Related",
+    keys: ["related_content", "news_summary"],
+  },
+  DisclaimerWarning: {
+    title: "Disclaimer",
+    keys: ["disclaimer", "sebi_disclaimer"],
+  },
+  SafeRefusal: {
+    title: "Notice",
+    keys: ["executive_summary", "summary"],
+  },
+  EducationalRedirect: {
+    title: "Learn More",
+    keys: ["educational_explanation", "summary"],
   },
 };
 
@@ -181,11 +225,11 @@ function buildConversationalAnswer(result: ResearchResult): string {
   if (comparison) return comparison;
   if (fundamentals) return fundamentals;
 
-  if (intent === "NEWS_QA" || news || sentiment) {
+  if (intent === "NEWS_ANALYSIS" || intent === "STOCK_MOVEMENT" || news || sentiment) {
     const parts = [
-      news && `Here is the latest read: ${news}`,
+      news && `${news}`,
       sentiment && `Market sentiment: ${sentiment}`,
-      movement && `The main driver looks like: ${movement}`,
+      movement && `Key driver: ${movement}`,
     ].filter(Boolean);
 
     if (parts.length) return parts.join("\n\n");
@@ -193,9 +237,9 @@ function buildConversationalAnswer(result: ResearchResult): string {
 
   if (movement || technical) {
     const parts = [
-      movement && `The stock seems to be moving because ${movement}`,
-      sentiment && `Sentiment around it is ${sentiment}`,
-      technical && `Technically, ${technical}`,
+      movement && `${movement}`,
+      sentiment && `Sentiment: ${sentiment}`,
+      technical && `Technical picture: ${technical}`,
     ].filter(Boolean);
 
     if (parts.length) return parts.join("\n\n");
@@ -206,7 +250,7 @@ function buildConversationalAnswer(result: ResearchResult): string {
     if (text) return text;
   }
 
-  return "I found the research context, but I could not turn it into a clean response yet. Please try asking the same question with the company name or ticker.";
+  return "I found the research context, but could not generate a complete response. Please try rephrasing your question with a specific company name or ticker.";
 }
 
 function normalizeForDuplicateCheck(text: string): string {

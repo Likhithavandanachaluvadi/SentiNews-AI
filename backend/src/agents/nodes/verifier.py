@@ -54,7 +54,7 @@ async def verifier_node(state: ResearchState) -> dict:
     planner_layout = intent.get("planner_layout", {})
     required_agents = planner_layout.get("required_agents", [])
 
-    if len(required_agents) < 2 or primary_intent not in ("STOCK_ANALYSIS", "GENERALIZED", "EARNINGS_REPORT"):
+    if len(required_agents) < 2 or primary_intent not in ("STOCK_ANALYSIS", "GENERALIZED", "EARNINGS_REPORT", "FUNDAMENTAL_ANALYSIS", "COMPANY_ANALYSIS", "COMPANY_COMPARISON", "VALUATION_ANALYSIS", "RISK_ANALYSIS"):
         skipped = {
             "is_valid": True,
             "contradictions_found": [],

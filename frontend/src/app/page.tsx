@@ -5,6 +5,7 @@ import Image from "next/image";
 import { ArrowUp, BadgeCheck, Bot, Hourglass, Link, LoaderCircle } from "lucide-react";
 import ResearchChat, { Message } from "../components/chat/ResearchChat";
 import { SourceItem } from "../components/chat/DynamicRenderer";
+import { API_BASE_URL } from "../lib/api-client";
 
 interface ResearchEnvelope {
   summary?: string;
@@ -85,7 +86,7 @@ export default function Home() {
     setMessages((current) => [...current, { role: "user", content: nextQuery }]);
 
     try {
-      const response = await fetch("http://localhost:8001/api/v1/research/analyze", {
+      const response = await fetch(`${API_BASE_URL}/api/v1/research/analyze`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

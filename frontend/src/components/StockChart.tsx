@@ -10,6 +10,7 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from 'recharts';
+import { API_BASE_URL } from '@/lib/api-client';
 
 interface PriceData {
   date: string;
@@ -35,7 +36,7 @@ export default function StockChart({ ticker, data = [], isLoading = false }: Sto
 
     async function loadPriceHistory() {
       try {
-        const response = await fetch(`http://localhost:8001/api/v1/market/history/${ticker}`);
+        const response = await fetch(`${API_BASE_URL}/api/v1/market/history/${ticker}`);
         if (!response.ok) {
           throw new Error('Failed to fetch price history');
         }

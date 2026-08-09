@@ -223,7 +223,7 @@ EXAMPLE JSON STRUCTURE (Do NOT wrap in any root key)
     "Major risk 1",
     "Major risk 2"
   ],
-  "data_freshness": "2026-07-17T12:00:00Z",
+  "data_freshness": "Use the retrieved evidence freshness supplied in the input.",
   "overall_confidence_score": 50,
   "sebi_disclaimer": "This is AI-generated educational research for informational purposes only. It does NOT constitute SEBI-registered investment advice."
 }}
@@ -353,7 +353,7 @@ To ensure high quality, each section must contain unique information; do not rep
   * First paragraph must directly answer the query.
   * State the primary news catalyst.
   * Limit to 2–3 concise sentences.
-  * Do not introduce the company (e.g., do NOT start the first sentence with the company's name or phrases like "[Company] is in the news" or "HDFC Bank is..."). Start directly with the core event or catalyst (e.g. "Recent stock price changes and increased trading volume are driven by...", "Key leadership changes have...").
+  * Do not introduce the company (e.g., do NOT start the first sentence with the company's name or phrases like "[Company] is in the news" or "HDFC Bank is..."). Start directly with a catalyst explicitly stated in the retrieved evidence.
   * Do not begin with market sentiment.
 
 # Why is the Company in the News?
@@ -413,7 +413,7 @@ WRITING STYLE GUIDELINES
 ========================================================
 HALLUCINATION PREVENTION
 ========================================================
-Never invent any events, prices, analyst opinions, market reactions, or numbers. If evidence is missing, state clearly that it is unavailable.
+Never invent any events, prices, analyst opinions, market reactions, business impacts, or numbers. The retrieved news articles are the closed factual evidence set for NEWS_ANALYSIS. Do not infer causality from a news event. When market reaction evidence is not verified, do not mention stock price, trading volume, investor reaction, or causal market impact; state that the business impact and market reaction are unclear from the retrieved evidence.
 
 ========================================================
 EXAMPLE JSON STRUCTURE (Do NOT wrap in any root key)
@@ -440,7 +440,7 @@ EXAMPLE JSON STRUCTURE (Do NOT wrap in any root key)
     "Major risk 1",
     "Major risk 2"
   ],
-  "data_freshness": "2026-07-17T12:00:00Z",
+  "data_freshness": "Use the retrieved evidence freshness supplied in the input.",
   "overall_confidence_score": 50,
   "sebi_disclaimer": "This is AI-generated educational research for informational purposes only. It does NOT constitute SEBI-registered investment advice."
 }}
@@ -462,6 +462,14 @@ Secondary Intent: {secondary_intent}
 RETRIEVED NEWS ARTICLES (RAW SOURCE EVIDENCE)
 ========================================================
 {retrieved_news}
+
+RETRIEVED EVIDENCE FRESHNESS
+========================================================
+{evidence_freshness}
+
+MARKET REACTION EVIDENCE
+========================================================
+{market_reaction_evidence}
 
 ========================================================
 VERIFIED GROUNDING CONTEXT
@@ -496,6 +504,8 @@ def is_report_populated(report: dict) -> bool:
     """Check if a report has actual content (not just empty dict)."""
     if not report:
         return False
+    if report.get("status") == "skipped":
+        return False
     if report.get("content"):
         return True
     
@@ -518,6 +528,37 @@ def is_report_populated(report: dict) -> bool:
                 return True
     
     return False
+
+
+def _has_verified_market_reaction(articles: list[dict]) -> bool:
+    """Only explicit retrieval metadata may authorize market-reaction claims."""
+    return any(
+        isinstance(article, dict) and article.get("market_reaction_verified") is True
+        for article in articles
+    )
+
+
+def _enforce_news_market_reaction_guard(summary: str, verified: bool) -> str:
+    """Remove unsupported price/volume claims and normalize the Market Impact section."""
+    if verified or not summary:
+        return summary
+
+    import re
+
+    safe_market_impact = (
+        "No verified short-term market reaction was identified in the retrieved sources. "
+        "The business impact is unclear from the retrieved evidence."
+    )
+    summary = re.sub(
+        r"(?im)^[^\n]*(?:stock price|share price|trading volume|price changes|market reaction)[^\n]*(?:\n|$)",
+        "",
+        summary,
+    )
+    return re.sub(
+        r"(?is)(# Market Impact\s*\n).*?(?=\n# |\Z)",
+        lambda match: f"{match.group(1)}{safe_market_impact}\n",
+        summary,
+    )
 
 def _calculate_overall_confidence(
     fund_report: dict,
@@ -1024,6 +1065,13 @@ async def judge_node(state: ResearchState) -> dict:
         if not retrieved_news_str:
             retrieved_news_str = "No retrieved news articles available."
 
+        market_reaction_verified = _has_verified_market_reaction(news_articles)
+        market_reaction_evidence = (
+            "Verified market-reaction evidence is present in the retrieved articles."
+            if market_reaction_verified
+            else "No verified short-term market reaction was retrieved. Do not claim price, volume, investor reaction, or causality."
+        )
+
         report: FinalEducationalReport = await chain.ainvoke({
             "fundamental_report": fund_report_json,
             "technical_report": tech_report_json,
@@ -1036,6 +1084,8 @@ async def judge_node(state: ResearchState) -> dict:
             "secondary_intent": secondary_intent,
             "sections_layout_instruction": sections_layout_instruction,
             "retrieved_news": retrieved_news_str,
+            "evidence_freshness": state.get("data_freshness") or "unknown",
+            "market_reaction_evidence": market_reaction_evidence,
         })
         logger.info("=" * 80)
         logger.info("JUDGE OUTPUT")
@@ -1063,7 +1113,12 @@ async def judge_node(state: ResearchState) -> dict:
         if primary_intent == "THEME_ANALYSIS":
             report.company_name = f"Theme: {query}"
         report.overall_confidence_score = overall_conf
-        report.data_freshness = datetime.utcnow().isoformat()
+        report.data_freshness = state.get("data_freshness") or "unknown"
+        if is_news_query:
+            report.executive_summary = _enforce_news_market_reaction_guard(
+                report.executive_summary,
+                market_reaction_verified,
+            )
         # NOTE: peer_comparison is built by response_builder from grounding_data.peers.
         # ResearchState does not carry a peer_comparison key, so no attachment is needed here.
         # ===== STEP 5: DEBUG LOGGING =====
@@ -1076,6 +1131,8 @@ async def judge_node(state: ResearchState) -> dict:
             sections_populated.append("technicals")
         if sent_populated:
             sections_populated.append("sentiment")
+        if is_news_query and news_articles:
+            sections_populated.append("news")
         
         sections_missing = []
         if not fund_populated:
@@ -1084,6 +1141,8 @@ async def judge_node(state: ResearchState) -> dict:
             sections_missing.append("technicals")
         if not sent_populated:
             sections_missing.append("sentiment")
+        if is_news_query and not news_articles:
+            sections_missing.append("news")
         
         debug_logger.log_synthesis_result(
             outlook_label=report.outlook_label,

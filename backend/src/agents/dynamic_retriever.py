@@ -347,6 +347,37 @@ def _freshness_tag() -> str:
     return _now_utc().strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def _freshness_from_evidence(articles: list[dict]) -> str:
+    """Return the newest source timestamp, or ``unknown`` when none is present."""
+    newest: datetime | None = None
+    newest_raw: str | None = None
+
+    for article in articles:
+        if not isinstance(article, dict):
+            continue
+        raw_value = article.get("publishedAt") or article.get("published_at") or article.get("date")
+        if not raw_value:
+            continue
+        raw_value = str(raw_value).strip()
+        try:
+            parsed = datetime.fromisoformat(raw_value.replace("Z", "+00:00"))
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            parsed = parsed.astimezone(timezone.utc)
+        except ValueError:
+            continue
+
+        if newest is None or parsed > newest:
+            newest = parsed
+            newest_raw = raw_value
+
+    if newest is None:
+        return "unknown"
+    if "T" not in (newest_raw or ""):
+        return newest.date().isoformat()
+    return newest.isoformat().replace("+00:00", "Z")
+
+
 def _news_search_term(query: str, primary_intent: str, ticker: Optional[str]) -> str:
     if ticker and primary_intent not in TICKERLESS_INTENTS:
         return ticker
@@ -776,7 +807,7 @@ async def dynamic_retriever_node(state: dict) -> dict:
 
     # Fetch structured grounding data (Phase 2)
     grounding_data = {}
-    if ticker and ticker != "N/A":
+    if ticker and ticker != "N/A" and (policy.fetch_market or policy.fetch_financials):
         try:
             from src.services.market_data import get_grounding_data
             grounding_data = await get_grounding_data(ticker)
@@ -820,7 +851,7 @@ async def dynamic_retriever_node(state: dict) -> dict:
         "context": context,
         "ticker": ticker,
         "news_articles": ranked_news,
-        "data_freshness": _freshness_tag(),
+        "data_freshness": _freshness_from_evidence(ranked_news) if fetch_news else "unknown",
         "ui_blocks": required_ui_blocks or UI_BLOCKS_MAP.get(
             primary_intent,
             UI_BLOCKS_MAP["GENERALIZED"]

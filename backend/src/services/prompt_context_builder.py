@@ -163,7 +163,7 @@ class PromptContextBuilder:
                 "=================================================\n"
                 f"Detected Theme: {detected_theme}\n"
                 f"Market Context: {market_context_str}\n"
-                f"Latest Theme News: {news_str[:300]}...\n\n"
+                f"Latest Theme News: {news_str}\n\n"
                 "=================================================\n"
                 "TOP BENEFICIARY COMPANIES\n"
                 "=================================================\n"

@@ -1106,13 +1106,23 @@ def _rewrite_conversational(query: str, final_report: dict, primary_intent: str,
             ("user", CONVERSATIONAL_REWRITE_USER)
         ])
         
+        import asyncio
         chain = prompt | llm
-        response = chain.invoke({
-            "query": query,
-            "plan_json": json.dumps(plan, indent=2),
-            "strategy_json": json.dumps(strategy, indent=2),
-            "original_report_text": report_text
-        })
+        try:
+            loop = asyncio.get_running_loop()
+            response = loop.run_in_executor(None, lambda: chain.invoke({
+                "query": query,
+                "plan_json": json.dumps(plan, indent=2),
+                "strategy_json": json.dumps(strategy, indent=2),
+                "original_report_text": report_text
+            }))
+        except RuntimeError:
+            response = chain.invoke({
+                "query": query,
+                "plan_json": json.dumps(plan, indent=2),
+                "strategy_json": json.dumps(strategy, indent=2),
+                "original_report_text": report_text
+            })
         
         conversational_text = response.content.strip()
         if conversational_text:
